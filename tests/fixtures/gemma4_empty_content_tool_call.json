@@ -1,0 +1,44 @@
+{
+  "_description": "Reproduction fixture for G7 (Gemma 4 empty-content tool-call assistant turn closure). The assistant's tool-call message has empty content but a matching tool_response follows. Upstream Gemma 4 templates suppress the <turn|> close marker in this case, leading to an infinite tool-call loop. Patched templates emit <turn|>.",
+  "_bug": "Blaizzy/mlx-vlm#1033 and #1034 (reza-yousefi, Apr 17 2026)",
+  "messages": [
+    {"role": "user", "content": "What is the weather in Tokyo?"},
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_abc",
+          "function": {
+            "name": "get_weather",
+            "arguments": {"city": "Tokyo"}
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_abc",
+      "name": "get_weather",
+      "content": "Tokyo: sunny, 22C"
+    },
+    {"role": "user", "content": "Thanks!"}
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {"type": "string", "description": "City name"}
+          },
+          "required": ["city"]
+        }
+      }
+    }
+  ],
+  "add_generation_prompt": true
+}

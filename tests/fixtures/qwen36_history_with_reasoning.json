@@ -1,0 +1,14 @@
+{
+  "_description": "Reproduction fixture for Q3.6-1 (Qwen3.6 preserve_thinking default-on flip). Conversation has an assistant turn with reasoning_content set BEFORE the last user message. Without preserve_thinking=true, upstream Qwen3.6 drops the historical <think> block. The patched template flips the default so historical thinking is preserved unless preserve_thinking=False is passed explicitly.",
+  "_bug": "https://www.reddit.com/r/LocalLLaMA/comments/1sne4gh/ (u/onil_gova, Apr 2026)",
+  "messages": [
+    {"role": "user", "content": "What is 2+2?"},
+    {
+      "role": "assistant",
+      "content": "4",
+      "reasoning_content": "HISTORICAL_REASONING_MARKER: 2+2 is a basic arithmetic operation; the answer is 4."
+    },
+    {"role": "user", "content": "What about 3+3?"}
+  ],
+  "add_generation_prompt": true
+}

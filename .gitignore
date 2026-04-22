@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+.python-version
+*.egg-info/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Test artifacts
+tests/golden/_actual/
+tests/_tmp/
+.coverage
+htmlcov/
+
+# Local-only files
+.envrc
+local-config.md

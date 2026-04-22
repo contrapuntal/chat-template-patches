@@ -1,0 +1,11 @@
+--- templates/gemma4/upstream/26B-A4B-it.jinja	2026-04-22 08:56:10
++++ templates/gemma4/patched/26B-A4B-it.jinja	2026-04-22 09:19:12
+@@ -331,7 +331,7 @@
+ 
+         {%- if ns.prev_message_type == 'tool_call' and not ns_tr_out.flag -%}
+             {{- '<|tool_response>' -}}
+-        {%- elif not (ns_tr_out.flag and not message.get('content')) -%}
++        {%- else -%}
+             {{- '<turn|>\n' -}}
+         {%- endif -%}
+     {%- endif -%}

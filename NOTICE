@@ -1,0 +1,98 @@
+chat-template-patches
+Copyright 2026 chat-template-patches contributors
+
+This product contains modifications of chat templates derived from third-party
+machine learning model distributions. Each upstream template is included in
+templates/<family>/upstream/ unmodified for reference, with provenance recorded
+in templates/<family>/PROVENANCE.md.
+
+----------------------------------------------------------------------
+Upstream sources
+----------------------------------------------------------------------
+
+Qwen3.5 family chat templates
+  Copyright (c) Alibaba Cloud / Qwen Team
+  Licensed under Apache License 2.0
+  Source: https://huggingface.co/Qwen/Qwen3.5-* (all sizes)
+
+Qwen3.6 family chat templates
+  Copyright (c) Alibaba Cloud / Qwen Team
+  Licensed under Apache License 2.0
+  Source: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
+          https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MLX-8bit (re-distribution)
+
+Gemma 4 family chat templates
+  Copyright (c) Google LLC
+  Licensed under the Gemma Terms of Use
+  https://ai.google.dev/gemma/terms
+  Source: https://huggingface.co/google/gemma-4-*
+          https://huggingface.co/unsloth/gemma-4-*-MLX-8bit (re-distribution)
+          https://huggingface.co/mlx-community/gemma-4-*-it-8bit (re-distribution)
+
+Note on Gemma terms: the Gemma Terms of Use add use-restrictions on top of an
+Apache-style copyright grant for the template files. Apache-2.0 on this repo
+governs only the modifications and tooling we contribute; users of the Gemma
+templates remain bound by Google's Gemma Terms with respect to model usage.
+
+----------------------------------------------------------------------
+Patch authorship and prior art
+----------------------------------------------------------------------
+
+P1 (Qwen3.5 no-user-query crash fallback)
+  Discovered locally; barubary's Fix 17 provides a more nuanced variant.
+
+P2 (Qwen3.5 tool-call argument type guard)
+  Documented in unsloth Qwen3.5 publisher notes (Mar 2026).
+
+P3 (Qwen3.5 small-model enable_thinking polarity flip)
+  Discovered locally by diffing across model sizes.
+
+P4 (Step-3.5-Flash and minijinja `| safe` filter compatibility)
+  Generic minijinja issue; first encountered with Step-3.5-Flash (288x7.4B MoE).
+
+P5 (Qwen3.5 /no_thinking system message toggle)
+  Original author: u/Substantial_Swan_144, r/LocalLLaMA, Nov 2025
+  https://www.reddit.com/r/LocalLLaMA/comments/1recpjw/
+
+P6-P10 (Qwen3.5 barubary-attuned fixes)
+  Original author: barubary
+  Source: https://huggingface.co/barubary/qwen3.5-barubary-attuned-chat-template
+
+R1 (Qwen3.5 empty-`<think>` cache-reuse guard)
+  Original author: latent-variable
+  HuggingFace PRs: Qwen/Qwen3.5-122B-A10B#22 and per-size discussions
+  Related GitHub: QwenLM/Qwen3#1826 (Giant-Space-Bee), #1831
+
+R2 (Qwen3.5 tool-call string-argument passthrough)
+  Original author: barubary (Fix 9)
+
+R3 (P5 sentinel hardening + ns_flags simplification)
+  ns_flags simplification by u/Zealousideal_Lie_850 on the P5 source thread.
+  Sentinel-hardening discussion: u/ex-arman68, r/LocalLLaMA "definitive" thread.
+
+Q3.6-1 (Qwen3.6 preserve_thinking default-on flip)
+  Original analysis: u/onil_gova, r/LocalLLaMA, Apr 2026
+  Cross-runtime: jundot/omlx PR #814 (latent-variable) auto-sets server-side.
+
+G1 (Gemma 4 `is sequence` minijinja crash)
+  Original author: u/Reaper_9382, r/LocalLLaMA, Apr 2026
+
+G2 (Gemma 4 `<|channel>thought` token leakage)
+  Independent fixes: u/asfbrz96 (github.com/asf0/gemma4_jinja),
+  aldegr (gist + llama.cpp PRs #21704, #21760).
+
+G3 (Gemma 4 official template Apr-2026 update — upstream merged)
+  Authored by Google; aligned by aldegr in llama.cpp PR #21704.
+
+G4 (Gemma 4 ENABLE_THINKING/DISABLE_THINKING sentinel template)
+  Original author: u/No_Information9314, r/LocalLLaMA, Apr 2026
+
+G5 (Gemma 4 LM Studio thinking-toggle UI gap)
+  Workaround surfaced by u/WyattTheSkid, r/LocalLLaMA, Apr 2026
+
+G7 (Gemma 4 empty-content tool-call assistant turn closure)
+  Bug originally reported by reza-yousefi as Blaizzy/mlx-vlm#1033 and #1034
+  (Apr 2026). The fix in this repo predates the upstream resolution.
+
+References to the broader chat-template ecosystem are recorded in
+docs/PATCH-CATALOG.md.

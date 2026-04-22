@@ -1,0 +1,11 @@
+--- templates/qwen3.6/upstream/35B-A3B.jinja	2026-04-22 08:56:10
++++ templates/qwen3.6/patched/35B-A3B.jinja	2026-04-22 09:07:21
+@@ -100,7 +100,7 @@
+             {%- endif %}
+         {%- endif %}
+         {%- set reasoning_content = reasoning_content|trim %}
+-        {%- if (preserve_thinking is defined and preserve_thinking is true) or (loop.index0 > ns.last_query_index) %}
++        {%- if (preserve_thinking is not defined or preserve_thinking is not false) or (loop.index0 > ns.last_query_index) %}
+             {{- '<|im_start|>' + message.role + '\n<think>\n' + reasoning_content + '\n</think>\n\n' + content }}
+         {%- else %}
+             {{- '<|im_start|>' + message.role + '\n' + content }}

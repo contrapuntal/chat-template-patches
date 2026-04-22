@@ -7,29 +7,37 @@ Master table of every patch maintained in this repo. **Status legend:**
 - **historical** — applied to an older template revision; the affected code path no longer exists in current upstream.
 - **opt-in** — patch is correct but only applies in specific environments (e.g., LM Studio's minijinja); not in the default `patched/` set.
 
-| ID | Family | One-liner | Status | Applies to |
-|---|---|---|---|---|
-| P1 | Qwen3.5 | Replace `raise_exception('No user query found')` with safe fallback | **active** | All Qwen3.5 sizes |
-| P2 | Qwen3.5 | `tool_call.arguments is mapping` guard (was `is defined`) | **upstream** (unsloth Mar 2026) | All non-unsloth Qwen3.5 GGUFs |
-| P3 | Qwen3.5 | Flip `enable_thinking` polarity on small models | **active** (partial upstream — fixed in 4B/9B as of Mar 2026; broken in 0.8B/2B) | Qwen3.5-0.8B, -2B |
-| P4 | Multi | Replace ` \| safe` with spaces (minijinja) | **opt-in** (LM Studio only) | Qwen3.5 + Step-3.5-Flash + any model with `\| tojson \| safe` |
-| P5 | Qwen3.5 | Inject `/no_thinking` system-message detector | **opt-in** (replaced by `--reasoning off` in current llama.cpp) | All Qwen3.5 |
-| P6 | Qwen3.5 | Parallel tool-call separator `\n\n` | **active** | All Qwen3.5 |
-| P7 | Qwen3.5 | Auto-disable thinking when tools are present | **active** | All Qwen3.5 |
-| P8 | Qwen3.5 | Streaming-safe trailing `\n` after `</tool_call>` | **active** | All Qwen3.5 |
-| P9 | Qwen3.5 | Empty `<think>` history alignment with current turn | **active** | All Qwen3.5 |
-| P10 | Qwen3.5 | Developer role + unknown role fallback | **active** | All Qwen3.5 |
-| R1 | Qwen3.5 | `and reasoning_content` guard on history `<think>` emission | **upstream — ready to merge** (per-size HF PRs by latent-variable open) | All Qwen3.5 |
-| R2 | Qwen3.5 | String-argument tool-call passthrough | **active** | All Qwen3.5 |
-| R3 | Qwen3.5 | P5 sentinel hardening (`<\|think_off\|>`) + `ns_flags` simplification | **active** (revision of P5) | All Qwen3.5 |
-| Q3.6-1 | Qwen3.6 | `preserve_thinking` default-on flip | **active** (LM Studio MLX path); **upstream-equivalent** in oMLX (auto-set server-side) | Qwen3.6-35B-A3B |
-| G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | Gemma 4 26B-A4B-it, 31B-it |
-| G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
-| G3 | Gemma 4 | Apr 2026 official template realignment | **upstream** (Google HF + llama.cpp #21704 #21760) | Gemma 4 26B-A4B-it, 31B-it |
-| G4 | Gemma 4 | `ENABLE_THINKING` / `DISABLE_THINKING` system-message sentinel | **opt-in** | Gemma 4 26B-A4B-it, 31B-it |
-| G5 | Gemma 4 | LM Studio thinking-toggle `model.yaml` workaround | **active** (config-side, not a template patch) | Gemma 4 (LM Studio non-community quants) |
-| G6 | Gemma 4 | Tool-calling / system-prompt compliance grab-bag | **active** (open upstream; configuration recommendations rather than a discrete template patch) | Gemma 4 26B-A4B-it primarily |
-| G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **active** | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+**Provenance tier legend** (durability of the source the patch traces to):
+
+- **publisher** — model author published the fix or the bug acknowledgment in their own repo / docs / release notes.
+- **upstream-tracker** — bug or fix is in a long-lived public issue/PR tracker (HF discussions on the publisher's repo, llama.cpp / mlx-vlm GitHub, etc.). Survives even if the original poster's account goes away.
+- **community-tracker** — third-party GitHub repo, gist, or HF community repo. Account-state-dependent, but git history persists. **Snapshotted in `docs/sources/`** where applicable.
+- **community-ephemeral** — Reddit thread, pastebin, or other host that can lock/expire/delete with no recovery. **Snapshotted in `docs/sources/`** where applicable.
+- **derived** — original analysis by this repo, no external prior art beyond a bug report.
+
+| ID | Family | One-liner | Status | Provenance tier | Applies to |
+|---|---|---|---|---|---|
+| P1 | Qwen3.5 | Replace `raise_exception('No user query found')` with safe fallback | **active** | derived (prior art: barubary, community-tracker — snapshot pending; HF repo 401 at fetch time) | All Qwen3.5 sizes |
+| P2 | Qwen3.5 | `tool_call.arguments is mapping` guard (was `is defined`) | **upstream** (unsloth Mar 2026) | publisher | All non-unsloth Qwen3.5 GGUFs |
+| P3 | Qwen3.5 | Flip `enable_thinking` polarity on small models | **active** (partial upstream — fixed in 4B/9B as of Mar 2026; broken in 0.8B/2B) | publisher (the polarity diff is observable across publisher templates) | Qwen3.5-0.8B, -2B |
+| P4 | Multi | Replace ` \| safe` with spaces (minijinja) | **opt-in** (LM Studio only) | derived | Qwen3.5 + Step-3.5-Flash + any model with `\| tojson \| safe` |
+| P5 | Qwen3.5 | Inject `/no_thinking` system-message detector | **opt-in** (replaced by `--reasoning off` in current llama.cpp) | community-ephemeral (Reddit + pastebin; **snapshotted** at `docs/sources/pastebins/4wZPFui9-...jinja`) | All Qwen3.5 |
+| P6 | Qwen3.5 | Parallel tool-call separator `\n\n` | **active** | community-tracker (barubary HF repo 401 at fetch time; parallel rediscoveries in `docs/sources/gists/`) | All Qwen3.5 |
+| P7 | Qwen3.5 | Auto-disable thinking when tools are present | **active** | community-tracker (barubary HF repo 401 at fetch time) | All Qwen3.5 |
+| P8 | Qwen3.5 | Streaming-safe trailing `\n` after `</tool_call>` | **active** | community-tracker (barubary HF repo 401 at fetch time) | All Qwen3.5 |
+| P9 | Qwen3.5 | Empty `<think>` history alignment with current turn | **active** | community-tracker (barubary HF repo 401 at fetch time) | All Qwen3.5 |
+| P10 | Qwen3.5 | Developer role + unknown role fallback | **active** | community-tracker (barubary HF repo 401 at fetch time; parallel rediscoveries snapshotted in `docs/sources/gists/sudoingX-...` and `lekoOwO-...`) | All Qwen3.5 |
+| R1 | Qwen3.5 | `and reasoning_content` guard on history `<think>` emission | **upstream — ready to merge** (per-size HF PRs by latent-variable open) | upstream-tracker (HF discussion threads on publisher repos) | All Qwen3.5 |
+| R2 | Qwen3.5 | String-argument tool-call passthrough | **active** | community-tracker (barubary HF repo 401 at fetch time) | All Qwen3.5 |
+| R3 | Qwen3.5 | P5 sentinel hardening (`<\|think_off\|>`) + `ns_flags` simplification | **active** (revision of P5) | community-ephemeral (Reddit thread comments) | All Qwen3.5 |
+| Q3.6-1 | Qwen3.6 | `preserve_thinking` default-on flip | **active** (LM Studio MLX path); **upstream-equivalent** in oMLX (auto-set server-side) | derived (bug report: community-ephemeral Reddit; cross-runtime fix at upstream-tracker `jundot/omlx#814`) | Qwen3.6-35B-A3B |
+| G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | community-ephemeral (Reddit thread) | Gemma 4 26B-A4B-it, 31B-it |
+| G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | community-tracker (asfbrz96 GitHub repo + aldegr gist; both **snapshotted** at `docs/sources/github-snapshots/asf0-...` and `docs/sources/gists/aldehir-...`) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
+| G3 | Gemma 4 | Apr 2026 official template realignment | **upstream** (Google HF + llama.cpp #21704 #21760) | publisher | Gemma 4 26B-A4B-it, 31B-it |
+| G4 | Gemma 4 | `ENABLE_THINKING` / `DISABLE_THINKING` system-message sentinel | **opt-in** | community-ephemeral (Reddit + pastebin; **snapshotted** at `docs/sources/pastebins/W9VxRw09-...jinja`) | Gemma 4 26B-A4B-it, 31B-it |
+| G5 | Gemma 4 | LM Studio thinking-toggle `model.yaml` workaround | **active** (config-side, not a template patch) | community-ephemeral (Reddit; example yaml **snapshotted** at `docs/sources/pastebins/HDt34yA8-...yaml`) | Gemma 4 (LM Studio non-community quants) |
+| G6 | Gemma 4 | Tool-calling / system-prompt compliance grab-bag | **active** (open upstream; configuration recommendations rather than a discrete template patch) | community-ephemeral (multiple Reddit threads) | Gemma 4 26B-A4B-it primarily |
+| G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **active** | derived (bug report: upstream-tracker `Blaizzy/mlx-vlm#1033` + `#1034`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 
 ---
 
@@ -318,9 +326,17 @@ bug). Patching `preserve_thinking` doesn't fix that — applying R1's
 `and reasoning_content` guard on top is recommended for the cleanest cache
 reuse.
 
-**Prior art.** Bug originally surfaced by u/onil_gova, r/LocalLLaMA
-"PSA: Qwen3.6 ships with preserve_thinking. Make sure you have it on." (Apr
-2026, ~387 upvotes).
+**Attribution.**
+- *Reporter:* u/onil_gova (Reddit) — r/LocalLLaMA *"PSA: Qwen3.6 ships
+  with preserve_thinking. Make sure you have it on."* (Apr 2026, ~387
+  upvotes). Documents the publisher recommendation and the
+  default-OFF behaviour.
+- *Fix author:* original to this repo. Mechanical polarity flip on the
+  publisher-provided `preserve_thinking` kwarg gate.
+- *Template author:* Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+- *Provenance tier:* derived (bug report is community-ephemeral; the
+  cross-runtime fix at `jundot/omlx#814` by latent-variable is on a
+  durable upstream tracker — see "Cross-runtime status" above).
 
 ---
 
@@ -476,6 +492,13 @@ with `tool_calls` + matching `tool_responses` + empty `content`. Upstream
 render is missing the `<turn|>` marker between this turn and the next
 prompt; patched render contains it.
 
-**Prior art.** Bug originally reported by reza-yousefi as
-`Blaizzy/mlx-vlm#1033` and `#1034` (duplicates) on Apr 17 2026.
-This patch is the proposed fix; an upstream resolution may differ in shape.
+**Attribution.**
+- *Reporter:* reza-yousefi (GitHub) — `Blaizzy/mlx-vlm#1033` + `#1034`
+  (duplicates), Apr 17 2026. Reported the failure mode; no fix included.
+- *Fix author:* original to this repo. Derived by inspecting the
+  template's branch logic and verified by render harness fixture.
+- *Template author:* Google LLC (Gemma 4 chat template).
+- *Provenance tier:* derived (bug report itself sits in a durable
+  upstream tracker — GitHub).
+- *Upstream status:* open as of fetch date; this patch predates any
+  upstream resolution.

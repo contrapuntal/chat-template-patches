@@ -19,7 +19,14 @@ correctness *and* that the patch actually addresses the failure mode.
 - **`patches/`** — unified-diff form of each patch, applicable with `patch -p1`
   or via `scripts/apply.sh`.
 - **`docs/PATCH-CATALOG.md`** — every patch with: id, target model(s),
-  problem statement, fix, upstream status, prior art, applicability matrix.
+  problem statement, fix, upstream status, **provenance tier**, prior art,
+  applicability matrix.
+- **`docs/sources/`** — verbatim snapshots of community-authored prior art
+  (templates from Reddit, pastebin, gists, third-party GitHub repos).
+  Cited from `PATCH-CATALOG.md` and `NOTICE`. See `docs/sources/README.md`
+  for the manifest with SHA-256s. Patches do not depend on these
+  snapshots — they exist to preserve attribution if the original hosts
+  disappear.
 - **`tests/`** — render harness + fixtures. Each patch has at least one
   fixture that *fails* on the upstream template and *passes* on the patched
   template.
@@ -131,9 +138,31 @@ Each new patch needs:
    discoverer if the patch isn't original to this repo.
 5. A `NOTICE` update if a new contributor or upstream source is involved.
 
+## Provenance and attribution
+
+Every shipped patch documents three roles separately in `NOTICE`:
+
+- **Reporter** — who first publicly surfaced the bug.
+- **Fix author** — who wrote the actual code change applied here.
+- **Template author** — the upstream model author whose work is modified.
+
+Each patch in `docs/PATCH-CATALOG.md` also carries a **provenance tier**
+indicating how durable the source the patch traces to is:
+
+- `publisher` (most durable) → `upstream-tracker` → `community-tracker` →
+  `community-ephemeral` (least durable) → `derived` (original to this repo).
+
+Sources at risk of disappearing (Reddit, pastebin, gists, small third-party
+GitHub repos) are snapshotted under `docs/sources/` with fetch date and
+SHA-256.
+
 ## License
 
 - Repo (patches, tooling, docs): Apache License 2.0 (see `LICENSE`).
 - Upstream templates under `templates/<family>/upstream/` retain their
   original copyright and license (Qwen: Apache-2.0; Gemma: Gemma Terms of
   Use). See `NOTICE` for full attribution.
+- Snapshotted prior art under `docs/sources/` retains its original
+  authors' rights — files are unmodified verbatim copies recorded for
+  attribution purposes per fair-use / archival convention. Each snapshot
+  is annotated with the original URL and author in `docs/sources/README.md`.

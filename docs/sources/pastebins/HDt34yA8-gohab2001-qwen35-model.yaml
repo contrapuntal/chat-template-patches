@@ -1,0 +1,69 @@
+# model.yaml is an open standard for defining cross-platform, composable AI models
+# Learn more at https://modelyaml.org
+
+model: unsloth/qwen3.5-27b
+
+base:
+  - key: unsloth/qwen3.5-27b-gguf
+    sources:
+      - type: huggingface
+        user: unsloth
+        repo: Qwen3.5-27B-GGUF
+
+config:
+  operation:
+    fields:
+      - key: llm.prediction.temperature
+        value: 0.6
+      - key: llm.prediction.topKSampling
+        value: 20
+      - key: llm.prediction.topPSampling
+        value:
+          checked: true
+          value: 0.95
+      - key: llm.prediction.minPSampling
+        value:
+          checked: true
+          value: 0
+
+metadataOverrides:
+  domain: llm
+  architectures:
+    - qwen3
+  compatibilityTypes:
+    - gguf
+  paramsStrings:
+    - 27B
+  minMemoryUsageBytes: 15000000000
+  contextLengths:
+    - 262144
+  vision: true
+  reasoning: true
+  trainedForToolUse: true
+
+customFields:
+  - key: enableThinking
+    displayName: Enable Thinking
+    description: Controls whether the model thinks before replying
+    type: boolean
+    defaultValue: true
+    effects:
+      - type: setJinjaVariable
+        variable: enable_thinking
+    suggestions:
+      - message: Recommended settings for thinking mode
+        conditions:
+          - type: equals
+            key: $.enableThinking
+            value: true
+        fields:
+          - key: llm.prediction.temperature
+            value: 0.6
+      - message: Recommended settings for non-thinking mode
+        conditions:
+          - type: equals
+            key: $.enableThinking
+            value: false
+        fields:
+          - key: llm.prediction.temperature
+            value: 0.7

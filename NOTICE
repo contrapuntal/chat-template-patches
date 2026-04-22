@@ -4,10 +4,12 @@ Copyright 2026 chat-template-patches contributors
 This product contains modifications of chat templates derived from third-party
 machine learning model distributions. Each upstream template is included in
 templates/<family>/upstream/ unmodified for reference, with provenance recorded
-in templates/<family>/PROVENANCE.md.
+in templates/<family>/PROVENANCE.md. Verbatim copies of community-authored
+prior art (templates, fixes, scripts) are snapshotted in docs/sources/ — see
+docs/sources/README.md for the manifest, SHA-256s, and original URLs.
 
 ----------------------------------------------------------------------
-Upstream sources
+Upstream model template authors
 ----------------------------------------------------------------------
 
 Qwen3.5 family chat templates
@@ -19,7 +21,10 @@ Qwen3.6 family chat templates
   Copyright (c) Alibaba Cloud / Qwen Team
   Licensed under Apache License 2.0
   Source: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
-          https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MLX-8bit (re-distribution)
+  This repo tracks unsloth's redistribution at
+  https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MLX-8bit (which carries
+  additional template fixes on top of canonical Qwen — see
+  templates/qwen3.6/PROVENANCE.md).
 
 Gemma 4 family chat templates
   Copyright (c) Google LLC
@@ -35,64 +40,157 @@ governs only the modifications and tooling we contribute; users of the Gemma
 templates remain bound by Google's Gemma Terms with respect to model usage.
 
 ----------------------------------------------------------------------
-Patch authorship and prior art
+Patch attribution — three-role labeling
 ----------------------------------------------------------------------
 
+Each shipped patch is the product of three potentially-distinct roles:
+
+  - Reporter        : who first surfaced the bug publicly
+  - Fix author      : who wrote the actual code change applied here
+  - Template author : the upstream model author whose work is modified
+
+This NOTICE distinguishes them explicitly. "Original author" without
+qualification has historically conflated the first two; the entries below
+disambiguate.
+
+PRIOR ART terminology means a published treatment that influenced this
+patch's design but is not the patch itself (different shape, different
+target, different runtime). It does not imply this repo's patch is
+derivative of that prior art in the copyright sense.
+
+----------------------------------------------------------------------
+Shipped patches
+----------------------------------------------------------------------
+
+Patch G7 — Gemma 4 empty-content tool-call assistant turn closure
+  Reporter        : reza-yousefi (GitHub) — Blaizzy/mlx-vlm#1033 + #1034,
+                    Apr 17 2026. The reports describe the failure mode
+                    (infinite tool-call loop on empty assistant content)
+                    but did not include a fix.
+  Fix author      : original to this repo, derived by inspecting the
+                    template's branch logic. Verified by a render harness
+                    fixture that asserts the bug pattern is present in
+                    upstream and absent in patched.
+  Template author : Google LLC (Gemma 4 chat template).
+  Upstream status : open as of fetch date; this patch predates any
+                    upstream resolution.
+
+Patch Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
+  Reporter        : u/onil_gova (Reddit) — r/LocalLLaMA "PSA: Qwen3.6 ships
+                    with preserve_thinking. Make sure you have it on.",
+                    Apr 2026 (~387 upvotes). The PSA documents that the
+                    publisher recommends the kwarg ON for agentic flows
+                    but defaults it OFF in the template.
+  Fix author      : original to this repo. Mechanical polarity flip on
+                    the existing publisher-provided `preserve_thinking`
+                    kwarg gate.
+  Template author : Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+  Cross-runtime   : equivalent fix applied server-side in oMLX
+                    (jundot/omlx PR #814 by latent-variable, merged
+                    2026-04-19). oMLX users do not need this template
+                    patch.
+
+----------------------------------------------------------------------
+Catalog-only patches (prior art and reporter attribution)
+----------------------------------------------------------------------
+
+The following patches are documented in docs/PATCH-CATALOG.md but do not
+yet ship a patched template here. Attribution captures who the catalog
+entry credits as reporter or prior-art author.
+
 P1 (Qwen3.5 no-user-query crash fallback)
-  Discovered locally; barubary's Fix 17 provides a more nuanced variant.
+  Prior art : barubary's Fix 17 (more nuanced fallback variant), see
+              the snapshot pointer in docs/sources/README.md (note:
+              barubary HF repo returned 401 at fetch time).
 
 P2 (Qwen3.5 tool-call argument type guard)
-  Documented in unsloth Qwen3.5 publisher notes (Mar 2026).
+  Documented by unsloth in publisher notes (Mar 2026 Qwen3.5 update).
 
 P3 (Qwen3.5 small-model enable_thinking polarity flip)
-  Discovered locally by diffing across model sizes.
+  Discovered by diffing publisher templates across model sizes; no
+  attributable single author.
 
-P4 (Step-3.5-Flash and minijinja `| safe` filter compatibility)
-  Generic minijinja issue; first encountered with Step-3.5-Flash (288x7.4B MoE).
+P4 (multi-model `| safe` filter removal for minijinja)
+  Generic minijinja issue; first observed by this project's authors
+  with Step-3.5-Flash.
 
-P5 (Qwen3.5 /no_thinking system message toggle)
-  Original author: u/Substantial_Swan_144, r/LocalLLaMA, Nov 2025
-  https://www.reddit.com/r/LocalLLaMA/comments/1recpjw/
+P5 (Qwen3.5 `/no_thinking` system message toggle)
+  Reporter / Original template author : u/Substantial_Swan_144,
+    r/LocalLLaMA "Qwen 3.5 Jinja Template – Restores Qwen /no_thinking
+    behavior!" (Nov 2025).
+  Original template snapshotted at:
+    docs/sources/pastebins/4wZPFui9-substantial_swan_144-qwen35-no_thinking.jinja
 
-P6-P10 (Qwen3.5 barubary-attuned fixes)
-  Original author: barubary
-  Source: https://huggingface.co/barubary/qwen3.5-barubary-attuned-chat-template
+P6, P7, P8, P9, P10 (barubary's Qwen3.5 fixes 15, 19, 18, 12, 3+20)
+  Prior art : barubary, qwen3.5-barubary-attuned-chat-template
+              (HuggingFace; snapshot pending — repo returned 401 on
+              2026-04-22). Catalog identifies each barubary "Fix N"
+              individually.
+  Parallel rediscovery (gists snapshotted):
+    docs/sources/gists/sudoingX-c2facf7d-qwen35-27b-fixed.jinja
+    docs/sources/gists/lekoOwO-c6aed944-qwen35-fork.jinja
 
 R1 (Qwen3.5 empty-`<think>` cache-reuse guard)
-  Original author: latent-variable
-  HuggingFace PRs: Qwen/Qwen3.5-122B-A10B#22 and per-size discussions
-  Related GitHub: QwenLM/Qwen3#1826 (Giant-Space-Bee), #1831
+  Reporter / Fix author : latent-variable (HuggingFace), per-size PRs
+    on Qwen/Qwen3.5-* model repos (e.g., #22 on Qwen3.5-122B-A10B).
+  Related GitHub : QwenLM/Qwen3#1826 (Giant-Space-Bee, with TTFT
+    benchmark), #1831.
+  Cross-reference (Reddit): r/LocalLLaMA "I tracked a major cache reuse
+    issue down to Qwen 3.5's chat template" by u/onil_gova (Apr 2026).
 
 R2 (Qwen3.5 tool-call string-argument passthrough)
-  Original author: barubary (Fix 9)
+  Prior art : barubary's Fix 9.
+  Independent confirmation : froggeric in r/LocalLLaMA tool-calling
+    fixes thread.
 
 R3 (P5 sentinel hardening + ns_flags simplification)
-  ns_flags simplification by u/Zealousideal_Lie_850 on the P5 source thread.
-  Sentinel-hardening discussion: u/ex-arman68, r/LocalLLaMA "definitive" thread.
+  Sentinel discussion : u/ex-arman68, r/LocalLLaMA "definitive Qwen 3.5
+    jinja template" thread (bug #7).
+  ns_flags simplification : u/Zealousideal_Lie_850, comment on the
+    original P5 thread.
 
-Q3.6-1 (Qwen3.6 preserve_thinking default-on flip)
-  Original analysis: u/onil_gova, r/LocalLLaMA, Apr 2026
-  Cross-runtime: jundot/omlx PR #814 (latent-variable) auto-sets server-side.
+Q3.6-1 (covered above as a shipped patch).
 
 G1 (Gemma 4 `is sequence` minijinja crash)
-  Original author: u/Reaper_9382, r/LocalLLaMA, Apr 2026
+  Reporter : u/Reaper_9382, r/LocalLLaMA "Fix Gemma 4 MCP tool calls
+    broken in LM Studio" (Apr 2026).
 
-G2 (Gemma 4 `<|channel>thought` token leakage)
-  Independent fixes: u/asfbrz96 (github.com/asf0/gemma4_jinja),
-  aldegr (gist + llama.cpp PRs #21704, #21760).
+G2 (historical Gemma 4 `<|channel>thought` token leakage)
+  Independent fix authors :
+    - asfbrz96 (GitHub), github.com/asf0/gemma4_jinja
+      Snapshot: docs/sources/github-snapshots/asf0-gemma4_jinja-chat_template.jinja
+    - aldegr (GitHub), gist + llama.cpp PRs #21704 and #21760
+      Snapshot: docs/sources/gists/aldehir-de036c259-gemma4-open-webui.jinja
 
-G3 (Gemma 4 official template Apr-2026 update — upstream merged)
-  Authored by Google; aligned by aldegr in llama.cpp PR #21704.
+G3 (Gemma 4 Apr-2026 official template realignment)
+  Authored by Google (HF commit e51e7dc on google/gemma-4-31B-it).
+  llama.cpp alignment by aldegr (PRs #21704, #21760, both merged).
 
-G4 (Gemma 4 ENABLE_THINKING/DISABLE_THINKING sentinel template)
-  Original author: u/No_Information9314, r/LocalLLaMA, Apr 2026
+G4 (Gemma 4 ENABLE_THINKING / DISABLE_THINKING sentinel)
+  Reporter / Original template author : u/No_Information9314,
+    r/LocalLLaMA "Gemma 4 thinking system prompt" (Apr 2026).
+  Original template snapshotted at:
+    docs/sources/pastebins/W9VxRw09-no_information9314-gemma4-enable_thinking.jinja
 
-G5 (Gemma 4 LM Studio thinking-toggle UI gap)
-  Workaround surfaced by u/WyattTheSkid, r/LocalLLaMA, Apr 2026
+G5 (Gemma 4 LM Studio thinking-toggle model.yaml workaround)
+  Reporter : u/WyattTheSkid, r/LocalLLaMA, Apr 2026.
+  Example model.yaml by u/Gohab2001, snapshotted at:
+    docs/sources/pastebins/HDt34yA8-gohab2001-qwen35-model.yaml
 
-G7 (Gemma 4 empty-content tool-call assistant turn closure)
-  Bug originally reported by reza-yousefi as Blaizzy/mlx-vlm#1033 and #1034
-  (Apr 2026). The fix in this repo predates the upstream resolution.
+G6 (Gemma 4 tool-calling / system-prompt compliance grab-bag)
+  Multiple reporters across r/LocalLLaMA, primary thread by u/RealChaoz
+  ("Gemma 4 is terrible with system prompts and tools"). Recommendations
+  rather than a discrete template patch.
 
-References to the broader chat-template ecosystem are recorded in
-docs/PATCH-CATALOG.md.
+G7 (covered above as a shipped patch).
+
+----------------------------------------------------------------------
+Snapshot manifest
+----------------------------------------------------------------------
+
+See docs/sources/README.md for the full table of snapshotted prior art:
+SHA-256, original URL, fetch date, and the catalog entry each snapshot
+supports. The shipped patches in this repo do NOT depend on the
+snapshots — patches in patches/ apply only against the upstream
+templates in templates/<family>/upstream/. Snapshots exist solely to
+preserve attribution and prior art if the original hosts disappear.

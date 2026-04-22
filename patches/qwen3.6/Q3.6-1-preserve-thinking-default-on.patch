@@ -1,4 +1,4 @@
---- templates/qwen3.6/upstream/35B-A3B.jinja	2026-04-22 08:56:10
+--- templates/qwen3.6/upstream/35B-A3B.jinja	2026-04-22 09:46:55
 +++ templates/qwen3.6/patched/35B-A3B.jinja	2026-04-22 09:07:21
 @@ -100,7 +100,7 @@
              {%- endif %}

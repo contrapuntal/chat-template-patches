@@ -24,7 +24,7 @@ sources=(
     "qwen3.5|27B|https://huggingface.co/Qwen/Qwen3.5-27B/raw/main/chat_template.jinja"
     "qwen3.5|35B-A3B|https://huggingface.co/Qwen/Qwen3.5-35B-A3B/raw/main/chat_template.jinja"
     "qwen3.5|122B-A10B|https://huggingface.co/Qwen/Qwen3.5-122B-A10B/raw/main/chat_template.jinja"
-    "qwen3.6|35B-A3B|https://huggingface.co/Qwen/Qwen3.6-35B-A3B/raw/main/chat_template.jinja"
+    "qwen3.6|35B-A3B|https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MLX-8bit/raw/main/chat_template.jinja"
     "gemma4|26B-A4B-it|https://huggingface.co/google/gemma-4-26B-A4B-it/raw/main/chat_template.jinja"
     "gemma4|31B-it|https://huggingface.co/google/gemma-4-31B-it/raw/main/chat_template.jinja"
     "gemma4|E2B-it|https://huggingface.co/google/gemma-4-E2B-it/raw/main/chat_template.jinja"

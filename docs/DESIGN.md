@@ -84,16 +84,31 @@ minimal set of HF-compatible globals/filters:
 For each `(template, fixture)` pair the harness:
 
 1. Loads the template (upstream or patched).
-2. Loads the fixture JSON (`messages`, optional `tools`, optional kwargs).
+2. Loads the fixture JSON (`messages`, optional `tools`, optional kwargs,
+   `_applies_to` list of family names that filters which templates this
+   fixture should render against).
 3. Renders.
 4. Asserts:
-   - **Happy path:** rendered output matches `tests/golden/<family>-<size>-<fixture>.txt` byte-for-byte.
+   - **Smoke path:** rendered output is non-empty.
+   - **Coverage:** every declared family must render at least one
+     applicable fixture — see `test_declared_families_ship_patched_templates`
+     and the per-family check inside `test_basic_chat_renders`. This
+     prevents an empty `patched/` directory from silently skipping the
+     family while the suite stays green.
    - **Bug-fix path:** for the upstream rendering, asserts the bug pattern
-     is present (e.g., missing `<turn|>` after empty-content tool call). For
-     the patched rendering, asserts the bug pattern is absent.
+     is present (e.g., missing `<turn|>` after empty-content tool call).
+     For the patched rendering, asserts the bug pattern is absent.
 
 Bug-fix tests are the load-bearing part of CI — they prevent silent
 regressions when re-applying patches against new upstream template revisions.
+
+**`tests/golden/` is intentionally empty in the shipped repo.** Byte-equal
+drift detection is an opt-in workflow via `scripts/verify.py --write-goldens`
+that captures current renderings as a local baseline. If you want that
+coverage, run it once after the initial checkout, commit the captured
+goldens to a fork, and use `scripts/verify.py` (without `--write-goldens`)
+to detect drift on subsequent template updates. The pytest suite makes no
+assertions against `tests/golden/`.
 
 ## Adding a new patch
 

@@ -15,6 +15,9 @@ venv/
 .DS_Store
 
 # Test artifacts
+# Goldens are an opt-in workflow (`scripts/verify.py --write-goldens`) that
+# users bootstrap locally — see README and DESIGN. Don't commit them.
+tests/golden/*.txt
 tests/golden/_actual/
 tests/_tmp/
 .coverage

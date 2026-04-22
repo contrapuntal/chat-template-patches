@@ -1,4 +1,5 @@
 {
+  "_applies_to": ["gemma4"],
   "_description": "Reproduction fixture for G7 (Gemma 4 empty-content tool-call assistant turn closure). The assistant's tool-call message has empty content but a matching tool_response follows. Upstream Gemma 4 templates suppress the <turn|> close marker in this case, leading to an infinite tool-call loop. Patched templates emit <turn|>.",
   "_bug": "Blaizzy/mlx-vlm#1033 and #1034 (reza-yousefi, Apr 17 2026)",
   "messages": [

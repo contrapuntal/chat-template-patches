@@ -24,6 +24,7 @@ from conftest import (  # noqa: E402
     GOLDEN,
     TemplatePair,
     all_template_pairs,
+    fixture_applies_to,
     load_fixture,
     render,
 )
@@ -45,6 +46,7 @@ def main() -> int:
     GOLDEN.mkdir(exist_ok=True)
     drift = 0
     written = 0
+    skipped = 0
     for pair in all_template_pairs():
         for variant in ("upstream", "patched"):
             template_path = pair.upstream if variant == "upstream" else pair.patched
@@ -52,6 +54,11 @@ def main() -> int:
                 continue
             for fname in fixture_names():
                 payload = load_fixture(fname)
+                # Filter by `_applies_to` so a Qwen-only fixture isn't
+                # rendered against Gemma 4 templates and vice versa.
+                if not fixture_applies_to(payload, pair.family):
+                    skipped += 1
+                    continue
                 try:
                     out = render(template_path, payload)
                 except Exception as e:  # noqa: BLE001

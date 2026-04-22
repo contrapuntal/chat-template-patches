@@ -34,6 +34,7 @@ sources=(
 want_families=("$@")
 
 changed=0
+failed=0
 for record in "${sources[@]}"; do
     IFS='|' read -r family size url <<<"$record"
 
@@ -66,9 +67,18 @@ for record in "${sources[@]}"; do
     else
         rm -f "$tmp"
         echo "! $family/$size  FETCH FAILED  $url" >&2
+        failed=$((failed + 1))
     fi
 done
 
 echo
-echo "Done. $changed templates changed."
-[[ $changed -gt 0 ]] && echo "Remember to update PROVENANCE.md and re-run pytest."
+echo "Done. $changed changed, $failed failed."
+if [[ $changed -gt 0 ]]; then
+    echo "Remember to update PROVENANCE.md and re-run pytest."
+fi
+# Exit nonzero only on fetch failures. A clean no-op (changed=0, failed=0)
+# exits 0; partial failure with later successes still exits nonzero.
+if [[ $failed -gt 0 ]]; then
+    exit 1
+fi
+exit 0

@@ -11,32 +11,76 @@ Test taxonomy
    assert:
      - `upstream` template exhibits the bug (fails the fix invariant).
      - `patched` template satisfies the fix invariant.
-3. **Regression tests** — any unchanged fixtures render byte-identical
-   between upstream and patched (except within the documented patch
-   region).
+3. **Coverage assertions** — every family declared in scope (see
+   `DECLARED_FAMILIES` in `conftest.py`) must ship at least one patched
+   template, or be explicitly listed in `CATALOG_ONLY_FAMILIES`. This
+   prevents an empty `patched/` directory from letting the suite go green
+   via skips.
 
-The third class isn't implemented in this initial scaffold beyond the
-bug-fix tests — the fixtures exposing the bugs are load-bearing; broader
-golden-file coverage is a follow-up.
+Optional byte-equal regression coverage against shipped golden files is
+out of scope for the pytest suite — it's an opt-in workflow via
+`scripts/verify.py --write-goldens` that a downstream user can bootstrap
+locally if they want. `tests/golden/` is intentionally empty in this repo.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from conftest import TemplatePair, load_fixture, render
+from conftest import (
+    CATALOG_ONLY_FAMILIES,
+    DECLARED_FAMILIES,
+    TemplatePair,
+    fixture_applies_to,
+    load_fixture,
+    render,
+)
 
 
 # ---------------------------------------------------------------------------
-# Smoke tests — every template renders basic chat without raising
+# Coverage assertions — surface missing patched templates instead of
+# silently letting them skip
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("family", DECLARED_FAMILIES)
+def test_declared_families_ship_patched_templates(
+    template_pairs: list[TemplatePair], family: str
+) -> None:
+    """Every declared family must ship at least one patched template, OR
+    be explicitly listed in CATALOG_ONLY_FAMILIES.
+
+    Without this, a family with empty `patched/` would let the suite go
+    green via skips even though the family is presented as in-scope in
+    the README and PATCH-CATALOG.
+    """
+    if family in CATALOG_ONLY_FAMILIES:
+        pytest.skip(
+            f"{family} is intentionally catalog-only; remove from "
+            f"CATALOG_ONLY_FAMILIES once the first patched template lands"
+        )
+    family_pairs = [p for p in template_pairs if p.family == family]
+    assert family_pairs, f"no upstream templates for declared family {family}"
+    patched_present = [p for p in family_pairs if p.patched_exists]
+    assert patched_present, (
+        f"family {family} ships no patched templates but is not in "
+        f"CATALOG_ONLY_FAMILIES — either add a patched template or "
+        f"explicitly mark it catalog-only"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Smoke tests — every template renders applicable fixtures without raising
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("variant", ["upstream", "patched"])
 def test_basic_chat_renders(template_pairs: list[TemplatePair], variant: str) -> None:
     fixture = load_fixture("basic_chat")
-    rendered_any = False
+    rendered_per_family: dict[str, int] = {}
     for pair in template_pairs:
+        if not fixture_applies_to(fixture, pair.family):
+            continue
         path = pair.upstream if variant == "upstream" else pair.patched
         if not path.is_file():
             continue  # e.g. qwen3.5 patched/ is empty in initial release
@@ -45,8 +89,21 @@ def test_basic_chat_renders(template_pairs: list[TemplatePair], variant: str) ->
         except Exception as e:  # noqa: BLE001
             pytest.fail(f"{pair.family}/{variant}/{pair.size} failed: {e}")
         assert out, f"{pair.family}/{variant}/{pair.size} rendered empty string"
-        rendered_any = True
-    assert rendered_any, f"No {variant} templates were exercised"
+        rendered_per_family[pair.family] = rendered_per_family.get(pair.family, 0) + 1
+
+    # Per-family coverage: every declared family with applicable templates
+    # for this variant must have rendered at least once. This is what
+    # protects against a silently-empty patched/ dir.
+    for family in DECLARED_FAMILIES:
+        family_has_pairs = any(p.family == family for p in template_pairs)
+        if not family_has_pairs:
+            continue
+        if variant == "patched" and family in CATALOG_ONLY_FAMILIES:
+            continue  # documented exemption
+        assert rendered_per_family.get(family, 0) > 0, (
+            f"variant={variant}: declared family {family} did not render "
+            f"any basic_chat fixtures — check templates/{family}/{variant}/"
+        )
 
 
 # ---------------------------------------------------------------------------

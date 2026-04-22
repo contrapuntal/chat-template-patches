@@ -7,6 +7,13 @@
 > follow-up that includes the full default stack applied against
 > `upstream/35B-A3B.jinja` (the canonical large-model template) and
 > `upstream/2B.jinja` (the canonical small-model template, for P3).
+>
+> The render harness's coverage assertions (see `tests/conftest.py`'s
+> `CATALOG_ONLY_FAMILIES`) explicitly exempt `qwen3.5` from the
+> "must ship at least one patched template" check until the first
+> patched file lands here. When the first Qwen3.5 patched template is
+> added, **remove `qwen3.5` from `CATALOG_ONLY_FAMILIES`** so the
+> coverage check starts enforcing for this family.
 
 ## Default stack (when published)
 

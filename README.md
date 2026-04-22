@@ -70,12 +70,27 @@ patch:
   expected delimiters present (e.g., `<turn|>`, `<|im_end|>`).
 - **Bug-fix verification:** for the failure mode the patch targets, the
   upstream render exhibits the bug and the patched render does not.
-- **Regression safety:** all other fixtures render byte-identically to a
-  golden file (or differ only in the documented patch region).
+- **Coverage assertions:** every family declared in scope (`README` /
+  `PATCH-CATALOG`) must ship at least one patched template — or be
+  explicitly listed as catalog-only — so an empty `patched/` directory
+  fails the suite instead of skipping silently.
 
-Adding a new patch means: write a fixture that exposes the bug, capture the
-"upstream is wrong" assertion, write the patch, then re-render to capture the
-"patched is right" assertion.
+**Optional drift detection (`scripts/verify.py`).** A separate, opt-in
+golden-file harness lets you bootstrap baseline renderings and assert that
+no template change drifts the output for unrelated fixtures:
+
+```bash
+scripts/verify.py --write-goldens   # capture current renderings as baseline
+scripts/verify.py                   # report any drift vs the captured baseline
+```
+
+Goldens are not shipped in this repo — bootstrap them locally if you want
+this kind of regression coverage. The pytest suite does not require them.
+
+Adding a new patch means: write a fixture that exposes the bug (declare
+which families it `_applies_to` in the JSON), capture the "upstream is
+wrong" assertion, write the patch, then re-render to capture the "patched
+is right" assertion.
 
 ## Scope
 

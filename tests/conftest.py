@@ -74,6 +74,30 @@ def load_fixture(name: str) -> dict[str, Any]:
     return json.loads(path.read_text())
 
 
+def fixture_applies_to(fixture: dict[str, Any], family: str) -> bool:
+    """Return True if `fixture` is intended to render against `family` templates.
+
+    Fixtures declare `_applies_to` as a list of family names (e.g.
+    `["gemma4"]`, `["qwen3.6"]`) or `["*"]` for the universal/smoke case.
+    Fixtures missing `_applies_to` are treated as universal so legacy
+    fixtures continue to work, but adding the key is recommended.
+    """
+    declared = fixture.get("_applies_to") or ["*"]
+    return "*" in declared or family in declared
+
+
+# Families the repo declares are in scope. Used by tests to assert that
+# every declared family ships at least one patched template (preventing
+# silent "patched dir is empty so nothing runs" green-suite failures).
+DECLARED_FAMILIES = ("gemma4", "qwen3.5", "qwen3.6")
+
+# Families that are intentionally catalog-only as of this release. Listing
+# a family here documents that the patched/ dir is expected empty and
+# disables the "must ship at least one patched template" assertion. Move
+# a family OUT of this set when its first patched template is added.
+CATALOG_ONLY_FAMILIES = frozenset({"qwen3.5"})
+
+
 @dataclass(frozen=True)
 class TemplatePair:
     family: str

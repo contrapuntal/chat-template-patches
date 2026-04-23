@@ -21,6 +21,9 @@ correctness *and* that the patch actually addresses the failure mode.
 - **`docs/PATCH-CATALOG.md`** — every patch with: id, target model(s),
   problem statement, fix, upstream status, **provenance tier**, prior art,
   applicability matrix.
+- **`docs/REFERENCES.md`** — flat-index bibliography of every Reddit thread,
+  GitHub issue/PR, and HuggingFace discussion cited by the catalog, grouped
+  by source and cross-referenced to the patch IDs each entry supports.
 - **`docs/sources/`** — verbatim snapshots of community-authored prior art
   (templates from Reddit, pastebin, gists, third-party GitHub repos).
   Cited from `PATCH-CATALOG.md` and `NOTICE`. See `docs/sources/README.md`

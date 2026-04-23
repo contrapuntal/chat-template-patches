@@ -1,6 +1,8 @@
 # Patch catalog
 
-Master table of every patch maintained in this repo. **Status legend:**
+Master table of every patch maintained in this repo. For a flat-index bibliography of every Reddit thread, GitHub issue/PR, and HF discussion cited below, see [`REFERENCES.md`](REFERENCES.md).
+
+**Status legend:**
 
 - **active** — applied in our `patched/` set; bug is current and unresolved upstream.
 - **upstream** — fix has been merged by the model authors or shipped in canonical community quants. Catalog entry kept for historical record and as a regression sentinel.

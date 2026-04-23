@@ -89,6 +89,16 @@ Patch Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
                     (jundot/omlx PR #814 by latent-variable, merged
                     2026-04-19). oMLX users do not need this template
                     patch.
+  Field reports   : u/Expensive-Register-5, sb6_6_6_6, Wise-Hunt7815
+                    (r/LocalLLM "Qwen 3.6-35B-A3B: Reddit Asked, So I
+                    Tested If the 3.5 Tool Calling Fixes Carry Over",
+                    Apr 2026, snapshotted at
+                    docs/sources/reddit/1sqpsut-...json). Mixed
+                    community data points on preserve_thinking=true
+                    for Qwen3.6 — confirms the polarity flip is
+                    correct but does not address downstream
+                    tool-call-parser instability. See PATCH-CATALOG
+                    Q3.6-1 "Field reports" for verbatim quotes.
 
 ----------------------------------------------------------------------
 Catalog-only patches (prior art and reporter attribution)

@@ -22,7 +22,7 @@ ephemeral sources, see `docs/sources/README.md`.
 | [r/LocalLLaMA `1slef6w`](https://www.reddit.com/r/LocalLLaMA/comments/1slef6w/) | [Fix] Gemma 4 MCP tool calls broken in LM Studio — "Unknown test: sequence" | u/Reaper_9382 | Apr 2026 | **G1** (reporter) |
 | [r/LocalLLaMA `1sh1bwv`](https://www.reddit.com/r/LocalLLaMA/comments/1sh1bwv/) | Gemma 4 is terrible with system prompts and tools | u/RealChaoz | Apr 2026 (124↑) | **G6** (primary thread) |
 | [r/Vllm `1skks8n`](https://www.reddit.com/r/Vllm/comments/1skks8n/) | Qwen 3.5 27B/35BA3B Tool Calling Issues: Why It Breaks & How I Fixed It | u/Expensive-Register-5 | Apr 2026 | catalog-only — vLLM-specific (R5 reference) |
-| [r/LocalLLM `1sqpsut`](https://www.reddit.com/r/LocalLLM/comments/1sqpsut/) | Qwen 3.6-35B-A3B: Reddit Asked, So I Tested If the 3.5 Tool Calling Fixes Carry Over | u/Expensive-Register-5 | Apr 2026 | follow-up to 1skks8n |
+| [r/LocalLLM `1sqpsut`](https://www.reddit.com/r/LocalLLM/comments/1sqpsut/) | Qwen 3.6-35B-A3B: Reddit Asked, So I Tested If the 3.5 Tool Calling Fixes Carry Over | u/Expensive-Register-5 | Apr 2026 | **Q3.6-1** (field reports, contested signal on `preserve_thinking: true`); follow-up to 1skks8n. **Snapshotted** at `docs/sources/reddit/1sqpsut-...json` |
 | [r/LocalLLaMA `1sgl3qz`](https://www.reddit.com/r/LocalLLaMA/comments/1sgl3qz/) | Gemma 4 on llama.cpp should be stable now | — | Apr 2026 | G3 stabilization context |
 
 ## HuggingFace discussions — Qwen publisher repos

@@ -14,6 +14,17 @@ sources — patches in `patches/` apply only to the templates in
 attribution and prior art remain auditable even if the original hosts
 disappear.
 
+## Reddit threads (high decay risk — locks/deletes/account suspensions)
+
+Reddit's JSON API (`<thread-url>.json`) returns the post + comment tree as
+structured JSON, which is what we snapshot here (not the rendered HTML).
+Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
+"<thread-url>.json"`.
+
+| File | SHA-256 | Original URL | Author / context | Fetch date |
+|---|---|---|---|---|
+| `reddit/1sqpsut-expensive_register_5-qwen36-tool-calling-tests.json` | `5ce6d606f419` | https://www.reddit.com/r/LocalLLM/comments/1sqpsut/ | u/Expensive-Register-5 — field-tested whether the Qwen3.5 tool-calling fixes (incl. `qwen3.5-enhanced.jinja` + `preserve_thinking: true`) carry over to Qwen3.6-35B-A3B. Contains contradictory community data points on `preserve_thinking` for Qwen3.6 that inform **Q3.6-1**'s field-reports section. | 2026-04-22 |
+
 ## Pastebins (highest decay risk)
 
 | File | SHA-256 | Original URL | Author / context | Fetch date |

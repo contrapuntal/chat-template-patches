@@ -328,6 +328,34 @@ bug). Patching `preserve_thinking` doesn't fix that — applying R1's
 `and reasoning_content` guard on top is recommended for the cleanest cache
 reuse.
 
+**Field reports.** Community signal on `preserve_thinking: true` for Qwen3.6
+is mixed — the polarity flip is the right default, but it does **not**
+eliminate Qwen3.6's separate tool-calling instability:
+
+- **u/Expensive-Register-5** (r/LocalLLM `1sqpsut`, Apr 2026): tested
+  `--default-chat-template-kwargs '{"preserve_thinking": true}'` against
+  `Qwen3.6-35B-A3B-FP8` on vLLM during a $10k-token agentic coding run.
+  Verdict: *"toggled preserve_thinking on to see if tool calling problem
+  fixed, doesnt work"*. Run with the 3.5-derived `qwen3.5-enhanced.jinja`
+  template + `qwen3_xml` parser still died at ~111K tokens with malformed
+  tool calls. **Implication:** Q3.6-1 is necessary but not sufficient for
+  agentic stability — separate runtime/parser issues compound on top.
+- **u/sb6_6_6_6** (same thread): *"had loops around 174k context adding
+  --default-chat-template-kwargs '{"preserve_thinking": true}' - did
+  help"*. Confirms the polarity flip is correct for the failure mode it
+  targets (long-context cache thrashing).
+- **u/Wise-Hunt7815** (same thread): *"'preserve_thinking' doesn't seem
+  to work. I tested it: guessing numbers, and in its response, the secret
+  number in the thought chain kept changing"*. **Open question:** whether
+  this is a separate `reasoning_content`-vs-`<think>`-wrapper accounting
+  bug downstream of the kwarg, or an artifact of the user's specific
+  client. Not currently in scope for Q3.6-1.
+
+These contradictory data points reinforce that Q3.6-1 is a polarity fix
+on a single template branch — it makes the kwarg behave correctly when
+unset, but does not fix the downstream R1-class empty-`<think>` emission
+or any tool-call-parser issues.
+
 **Attribution.**
 - *Reporter:* u/onil_gova (Reddit) — r/LocalLLaMA *"PSA: Qwen3.6 ships
   with preserve_thinking. Make sure you have it on."* (Apr 2026, ~387

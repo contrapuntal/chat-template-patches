@@ -60,14 +60,16 @@
         {%- set num_sys = 1 %}
     {%- endif %}
 {%- endif %}
-{#- Q3.6-5: detect and strip thinking-toggle sentinels in the merged system message -#}
-{%- if '<|think_off|>' in merged_system %}
-    {%- set ns_flags.enable_thinking = false %}
-    {%- set merged_system = merged_system.replace('<|think_off|>', '')|trim %}
-{%- endif %}
-{%- if '<|think_on|>' in merged_system %}
-    {%- set ns_flags.enable_thinking = true %}
-    {%- set merged_system = merged_system.replace('<|think_on|>', '')|trim %}
+{#- Q3.6-5: detect and strip thinking-toggle sentinels in the merged system message. When BOTH appear, the rightmost-in-text sentinel wins (deterministic; matches "last write wins" intuition for an explicit per-request override appended to an inherited default). -#}
+{%- set _think_off_pos = merged_system.rfind('<|think_off|>') %}
+{%- set _think_on_pos = merged_system.rfind('<|think_on|>') %}
+{%- if _think_off_pos >= 0 or _think_on_pos >= 0 %}
+    {%- if _think_off_pos > _think_on_pos %}
+        {%- set ns_flags.enable_thinking = false %}
+    {%- else %}
+        {%- set ns_flags.enable_thinking = true %}
+    {%- endif %}
+    {%- set merged_system = merged_system.replace('<|think_off|>', '').replace('<|think_on|>', '')|trim %}
 {%- endif %}
 {%- if tools and tools is iterable and tools is not mapping %}
     {{- '<|im_start|>system\n' }}
@@ -104,13 +106,13 @@
     {%- if message.role == "user" %}
         {{- '<|im_start|>' + message.role + '\n' + content + '<|im_end|>' + '\n' }}
     {%- elif message.role == "assistant" %}
-        {#- Q3.6-3: auto-close unclosed <think> before <tool_call>; recognize both </think> and </thinking> as valid closers -#}
+        {#- Q3.6-3: auto-close unclosed <think> before <tool_call>; recognize both </think> and </thinking> as valid closers. Tool-call search starts at last_think so an earlier completed <tool_call> doesn't get mistaken for the wrapped one. -#}
         {%- if '<tool_call>' in content and '<think>' in content %}
             {%- set last_think = content.rfind('<think>') %}
             {%- set last_close_think = content.rfind('</think>') %}
             {%- set last_close_thinking = content.rfind('</thinking>') %}
             {%- set last_close = last_close_think if last_close_think > last_close_thinking else last_close_thinking %}
-            {%- set tool_pos = content.find('<tool_call>') %}
+            {%- set tool_pos = content.find('<tool_call>', last_think) %}
             {%- if last_close < last_think %}
                 {%- if tool_pos > last_think %}
                     {%- set content = content[:tool_pos] + '</think>' + content[tool_pos:] %}

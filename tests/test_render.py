@@ -386,6 +386,45 @@ def test_q36_3_patched_auto_closes_think_before_tool_call(template_pairs) -> Non
     )
 
 
+def test_q36_3_patched_handles_earlier_completed_tool_call(template_pairs) -> None:
+    """Adversarial fixture (from Codex review 2026-05-06): when an assistant
+    turn contains an EARLIER completed `<tool_call>` followed by a LATER
+    unclosed `<think>...<tool_call>` block, the auto-close must inject
+    `</think>` before the LATER tool_call (the one wrapped by the unclosed
+    think), not get confused by the earlier completed tool_call.
+
+    Original Q3.6-3 used `content.find('<tool_call>')` which returns the
+    FIRST tool_call regardless of position. The fix scopes the search to
+    `content.find('<tool_call>', last_think)`."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    fixture = load_fixture("qwen36_unclosed_think_after_earlier_tool_call")
+    out = render(pair.patched, fixture)
+    asst = _assistant_turn(out)
+    # Locate the LAST <think> (the unclosed one) and assert that </think>
+    # appears before the SECOND <tool_call> in the assistant turn.
+    last_think = asst.rfind("<think>")
+    close_after_think = asst.find("</think>", last_think + 1)
+    second_tool_call = asst.find("<tool_call>", last_think + 1)
+    assert last_think >= 0 and second_tool_call >= 0, (
+        f"fixture didn't render the expected shape:\n{asst!r}"
+    )
+    assert 0 <= close_after_think < second_tool_call, (
+        f"Q3.6-3 broken — </think> at {close_after_think} did not close "
+        f"BEFORE the wrapped <tool_call> at {second_tool_call} "
+        f"(last_think at {last_think}). The auto-close picked the wrong "
+        f"tool_call position.\nAssistant turn:\n{asst!r}"
+    )
+    # The marker payload of the wrapped tool_call must end up OUTSIDE the
+    # think block — i.e., after the injected </think>.
+    marker_pos = asst.find("NYC_AFTER_UNCLOSED_THINK_MARKER")
+    assert close_after_think < marker_pos, (
+        f"wrapped tool_call's payload landed inside the think block — "
+        f"</think>@{close_after_think} marker@{marker_pos}\n{asst!r}"
+    )
+
+
 def test_q36_3_patched_recognizes_thinking_close_hallucination(template_pairs) -> None:
     """Q3.6-3 also adds an `elif '</thinking>' in content` branch to the
     reasoning_content extraction. When the model emits `</thinking>`
@@ -471,6 +510,43 @@ def test_q36_4_patched_emits_string_arguments_verbatim(template_pairs) -> None:
     assert "SF_STRING_ARG_MARKER" in out[tc_idx:end_idx], (
         "Q3.6-4 broken — string-form arguments emitted, but outside the "
         f"tool_call block. Output:\n{out!r}"
+    )
+
+
+def test_q36_4_patched_pins_raw_json_grammar_for_string_args(template_pairs) -> None:
+    """Pinned-format regression (from Codex review 2026-05-06): when
+    arguments arrive as a JSON string, Q3.6-4 emits them as RAW JSON
+    inside `<function=...>` rather than re-wrapping in `<parameter>`
+    blocks. This is intentional: pure Jinja2 has no portable `from_json`
+    filter, so the trade-off is "raw JSON alternate grammar over silent
+    drop." This test pins the exact rendered shape so any future change
+    that reverses this decision is caught explicitly.
+
+    Documented in PATCH-CATALOG § Q3.6-4 — see "Why two grammars" note."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    fixture = load_fixture("qwen36_string_args_tool_call")
+    out = render(pair.patched, fixture)
+    # The raw JSON string must appear verbatim inside <function=...>.
+    expected_block = (
+        '<function=get_weather>\n'
+        '{"city": "SF_STRING_ARG_MARKER"}\n'
+        '</function>'
+    )
+    assert expected_block in out, (
+        "Q3.6-4 raw-JSON grammar drifted. Expected the literal block:\n"
+        f"{expected_block!r}\n"
+        "Got output (assistant turn shown):\n"
+        f"{_assistant_turn(out)!r}"
+    )
+    # And explicitly NOT wrapped in <parameter=...>:
+    assert "<parameter=city>" not in out, (
+        "Q3.6-4 unexpectedly wrapped string-form arguments in "
+        "<parameter=...>; this is the mapping-path grammar. If this "
+        "change is intentional (e.g., the template now parses JSON via "
+        "an extension filter), update PATCH-CATALOG § Q3.6-4 'Why two "
+        "grammars' AND remove this pinned test."
     )
 
 
@@ -589,6 +665,47 @@ def test_q36_5_think_on_sentinel_overrides_explicit_kwarg(template_pairs) -> Non
     assert gen.endswith("<think>\n"), (
         "Q3.6-5 broken — `<|think_on|>` did not override "
         f"enable_thinking=False kwarg. Got:\n{gen!r}"
+    )
+
+
+def test_q36_5_conflicting_sentinels_rightmost_wins(template_pairs) -> None:
+    """Adversarial fixture (from Codex review 2026-05-06): when BOTH
+    `<|think_on|>` and `<|think_off|>` appear in the merged system message,
+    the rightmost-in-text sentinel wins. The original Q3.6-5 stripped them
+    in code order (think_off first, think_on second), so think_on always
+    won regardless of textual order — making per-request off-overrides
+    appended to a default-on prompt silently ineffective."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    fixture = load_fixture("qwen36_conflicting_think_sentinels")
+    # Fixture has think_on first, think_off later → think_off must win
+    out = render(pair.patched, fixture)
+    gen = _generation_prompt(out)
+    assert gen.endswith("<think>\n\n</think>\n\n"), (
+        "Q3.6-5 broken — think_on (earlier in text) won over think_off "
+        f"(later in text). Generation prompt:\n{gen!r}"
+    )
+    assert "<|think_on|>" not in out and "<|think_off|>" not in out, (
+        f"Q3.6-5 broken — sentinels not stripped:\n{out!r}"
+    )
+
+    # Reverse order: think_off first, think_on later → think_on must win
+    payload = {
+        **fixture,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Default <|think_off|> but use <|think_on|> for this",
+            },
+            {"role": "user", "content": "Hi"},
+        ],
+    }
+    out = render(pair.patched, payload)
+    gen = _generation_prompt(out)
+    assert gen.endswith("<think>\n"), (
+        "Q3.6-5 broken — think_off (earlier in text) won over think_on "
+        f"(later in text). Generation prompt:\n{gen!r}"
     )
 
 

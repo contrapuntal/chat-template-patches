@@ -19,6 +19,13 @@ take precedence). Implementation uses a namespace `ns_flags` so the
 generation-prompt block can read the post-sentinel state regardless of
 whether a kwarg was passed.
 
+Conflict policy: when BOTH sentinels appear in the merged system text,
+the **rightmost-in-text** one wins (deterministic; matches "last write
+wins" intuition for an explicit per-request override appended to an
+inherited default). Codex adversarial review (2026-05-06) caught that
+the original code-order processing always let `<|think_on|>` win
+regardless of textual order; rfind-based comparison fixes that.
+
 This is the delimited-tag form of the sentinel, matching Qwen's own
 control-token convention. The hardened form prevents collisions with
 documentation excerpts or file paths that might mention the literal
@@ -41,23 +48,25 @@ Q3.6-4-applied state.
  {%- set num_sys = 0 %}
  {%- set merged_system = '' %}
  {%- if messages[0].role == 'system' or messages[0].role == 'developer' %}
-@@ -56,6 +61,15 @@
+@@ -56,6 +61,18 @@
          {%- set num_sys = 1 %}
      {%- endif %}
  {%- endif %}
-+{#- Q3.6-5: detect and strip thinking-toggle sentinels in the merged system message -#}
-+{%- if '<|think_off|>' in merged_system %}
-+    {%- set ns_flags.enable_thinking = false %}
-+    {%- set merged_system = merged_system.replace('<|think_off|>', '')|trim %}
-+{%- endif %}
-+{%- if '<|think_on|>' in merged_system %}
-+    {%- set ns_flags.enable_thinking = true %}
-+    {%- set merged_system = merged_system.replace('<|think_on|>', '')|trim %}
++{#- Q3.6-5: detect and strip thinking-toggle sentinels in the merged system message. When BOTH appear, the rightmost-in-text sentinel wins (deterministic; matches "last write wins" intuition for an explicit per-request override appended to an inherited default). -#}
++{%- set _think_off_pos = merged_system.rfind('<|think_off|>') %}
++{%- set _think_on_pos = merged_system.rfind('<|think_on|>') %}
++{%- if _think_off_pos >= 0 or _think_on_pos >= 0 %}
++    {%- if _think_off_pos > _think_on_pos %}
++        {%- set ns_flags.enable_thinking = false %}
++    {%- else %}
++        {%- set ns_flags.enable_thinking = true %}
++    {%- endif %}
++    {%- set merged_system = merged_system.replace('<|think_off|>', '').replace('<|think_on|>', '')|trim %}
 +{%- endif %}
  {%- if tools and tools is iterable and tools is not mapping %}
      {{- '<|im_start|>system\n' }}
      {{- "# Tools\n\nYou have access to the following functions:\n\n<tools>" }}
-@@ -163,7 +177,8 @@
+@@ -163,7 +180,8 @@
  {%- endfor %}
  {%- if add_generation_prompt %}
      {{- '<|im_start|>assistant\n' }}

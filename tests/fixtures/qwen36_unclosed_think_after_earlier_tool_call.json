@@ -1,0 +1,14 @@
+{
+  "_applies_to": ["qwen3.6"],
+  "_description": "Adversarial fixture for Q3.6-3 (auto-close <think> before <tool_call>). Assistant content has TWO tool calls: a completed one early in the turn, then an unclosed `<think>` block followed by a SECOND `<tool_call>`. The auto-close logic must inject `</think>` before the SECOND tool call (the one wrapped by the unclosed think), not the FIRST. Codex adversarial review (2026-05-06) caught that the original Q3.6-3 used `content.find('<tool_call>')` which returns the FIRST tool_call regardless of position relative to last_think, leaving the second tool call still inside the unclosed think.",
+  "_bug": "Codex adversarial review finding (2026-05-06): Q3.6-3 auto-close picks first tool_call, not the one after the unclosed think.",
+  "messages": [
+    {"role": "user", "content": "Get weather for SF and NYC"},
+    {
+      "role": "assistant",
+      "content": "<tool_call>\n<function=get_weather>\n<parameter=city>\nSF\n</parameter>\n</function>\n</tool_call>\n<think>Now NYC.<tool_call>\n<function=get_weather>\n<parameter=city>\nNYC_AFTER_UNCLOSED_THINK_MARKER\n</parameter>\n</function>\n</tool_call>"
+    },
+    {"role": "user", "content": "Done?"}
+  ],
+  "add_generation_prompt": true
+}

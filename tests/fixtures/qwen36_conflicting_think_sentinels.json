@@ -1,0 +1,10 @@
+{
+  "_applies_to": ["qwen3.6"],
+  "_description": "Adversarial fixture for Q3.6-5: a system message containing BOTH `<|think_on|>` and `<|think_off|>` sentinels. Codex adversarial review (2026-05-06) caught that the original Q3.6-5 stripped them in code order (think_off first, then think_on), so think_on always won regardless of textual order. The fix uses rightmost-in-text-wins via rfind position comparison. This fixture places `<|think_on|>` early and `<|think_off|>` late — under the fix, think_off must win and the generation prompt must close thinking.",
+  "_bug": "Codex adversarial review finding (2026-05-06): Q3.6-5 sentinel processing has implicit precedence baked into code order rather than text position.",
+  "messages": [
+    {"role": "system", "content": "Default mode <|think_on|> but for THIS request please use <|think_off|>"},
+    {"role": "user", "content": "Quick: what is 2+2?"}
+  ],
+  "add_generation_prompt": true
+}

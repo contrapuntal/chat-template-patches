@@ -21,10 +21,19 @@ Two related Qwen3.6 failure modes:
    2026-05-01).
 
 Fix combines both via fakezeta's dual-rfind generalization (gist
-9e8e039c, snapshotted): the auto-close uses `max(rfind('</think>'),
-rfind('</thinking>'))` to detect either close form, and the
-reasoning_content extraction adds an `elif '</thinking>' in content`
-branch that splits on `</thinking>` instead.
+9e8e039c, snapshotted): the auto-close uses
+`max(rfind('</think>'), rfind('</thinking>'))` to detect either close
+form, and the reasoning_content extraction adds an
+`elif '</thinking>' in content` branch that splits on `</thinking>`
+instead.
+
+Tool-call position search uses `content.find('<tool_call>', last_think)`
+so an EARLIER completed `<tool_call>` (before the unclosed think)
+does not get mistaken for the wrapped one. Codex adversarial review
+(2026-05-06) caught the unscoped form, which would inject `</think>`
+at end-of-content when the first tool_call appeared before the
+unclosed think — leaving the SECOND tool_call (the wrapped one)
+inside the unclosed reasoning block.
 
 Stacks on Q3.6-1 + Q3.6-2. Diff is against the Q3.6-2-applied state.
 
@@ -34,13 +43,13 @@ Stacks on Q3.6-1 + Q3.6-2. Diff is against the Q3.6-2-applied state.
      {%- if message.role == "user" %}
          {{- '<|im_start|>' + message.role + '\n' + content + '<|im_end|>' + '\n' }}
      {%- elif message.role == "assistant" %}
-+        {#- Q3.6-3: auto-close unclosed <think> before <tool_call>; recognize both </think> and </thinking> as valid closers -#}
++        {#- Q3.6-3: auto-close unclosed <think> before <tool_call>; recognize both </think> and </thinking> as valid closers. Tool-call search starts at last_think so an earlier completed <tool_call> doesn't get mistaken for the wrapped one. -#}
 +        {%- if '<tool_call>' in content and '<think>' in content %}
 +            {%- set last_think = content.rfind('<think>') %}
 +            {%- set last_close_think = content.rfind('</think>') %}
 +            {%- set last_close_thinking = content.rfind('</thinking>') %}
 +            {%- set last_close = last_close_think if last_close_think > last_close_thinking else last_close_thinking %}
-+            {%- set tool_pos = content.find('<tool_call>') %}
++            {%- set tool_pos = content.find('<tool_call>', last_think) %}
 +            {%- if last_close < last_think %}
 +                {%- if tool_pos > last_think %}
 +                    {%- set content = content[:tool_pos] + '</think>' + content[tool_pos:] %}

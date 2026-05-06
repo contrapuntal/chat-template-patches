@@ -24,6 +24,7 @@ Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
 | File | SHA-256 | Original URL | Author / context | Fetch date |
 |---|---|---|---|---|
 | `reddit/1sqpsut-expensive_register_5-qwen36-tool-calling-tests.json` | `5ce6d606f419` | https://www.reddit.com/r/LocalLLM/comments/1sqpsut/ | u/Expensive-Register-5 — field-tested whether the Qwen3.5 tool-calling fixes (incl. `qwen3.5-enhanced.jinja` + `preserve_thinking: true`) carry over to Qwen3.6-35B-A3B. Contains contradictory community data points on `preserve_thinking` for Qwen3.6 that inform **Q3.6-1**'s field-reports section. | 2026-04-22 |
+| `reddit/1t4cev0-fakezeta-qwen36-merged-template.json` | `44a1d9ed4cd1` | https://www.reddit.com/r/LocalLLaMA/comments/1t4cev0/ | u/fakezeta — announcement of a Claude-Opus-assisted merge of allanchan339's + froggeric's Qwen3.6 templates (100↑ / 0.95 ratio). Surfaced the auto-close-`<think>`-before-`<tool_call>` fix and triggered the attribution diff that traced it to allanchan339 (commit `13556c0`, 2026-05-02) rather than froggeric (added 2026-05-05). Top comment captures community skepticism toward LLM-merged Jinja. Supports the Q3.6-2 / P11 attribution narrative. | 2026-05-06 |
 
 ## Pastebins (highest decay risk)
 
@@ -41,6 +42,7 @@ Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
 | `gists/aldehir-de036c259-gemma4-open-webui.jinja` | `137b28d20c0c` | https://gist.github.com/aldehir/de036c259ecfe2571b9f1e573f9340e7 | aldegr (GitHub: aldehir) — Gemma 4 template variant with OpenWebUI `<think>`-tag content recovery; cross-referenced from llama.cpp PR #21760 | 2026-04-22 |
 | `gists/sudoingX-c2facf7d-qwen35-27b-fixed.jinja` | `169dbbb7d9f0` | https://gist.github.com/sudoingX/c2facf7d8f7608c65c1024ef3b22d431 | sudoingX — Qwen3.5 27B template with developer-role + thinking-mode preservation fixes (parallel rediscovery of P10 + R1) | 2026-04-22 |
 | `gists/lekoOwO-c6aed944-qwen35-fork.jinja` | `254084a6e696` | https://gist.github.com/lekoOwO/c6aed944a636abccfe2c3912be34b904 | lekoOwO — fork of sudoingX's gist (Apr 2026); confirms the pattern is widely observed | 2026-04-22 |
+| `gists/fakezeta-9e8e039c-qwen36-merged.jinja` | `fa19bcf78e93` | https://gist.github.com/fakezeta/9e8e039c60332fcb143c6e805558afe0 | fakezeta — derivative LLM-assisted merge of allanchan339's `qwen3.6-enhanced.jinja` + froggeric's `qwen3.6/chat_template.jinja` (announced in r/LocalLLaMA `1t4cev0`). Improves both parents in the auto-close path by checking *both* `</think>` and `</thinking>` rfind positions before injecting the closer — that combined form is fakezeta's own contribution. Snapshotted as historical context, not as primary source for any patch. | 2026-05-06 |
 
 ## Third-party GitHub repos (medium decay risk)
 
@@ -48,7 +50,9 @@ Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
 |---|---|---|---|---|
 | `github-snapshots/asf0-gemma4_jinja-chat_template.jinja` | `98ba9089e440` | https://github.com/asf0/gemma4_jinja | asfbrz96 — Gemma 4 template that strips reasoning replay to suppress `<\|channel>thought` leakage; superseded by Google's Apr-2026 official update (G2 historical) | 2026-04-22 |
 | `github-snapshots/markqvist-lc-qwen35_tool_thoughts.py` | `709771f8a1f2` | https://github.com/markqvist/lc/blob/master/lc/quirks/qwen35_tool_thoughts.py | markqvist — client-side quirk handler for the Qwen3.5 tool-call-inside-thinking-block bug (llama.cpp issue #20837 workaround) | 2026-04-22 |
-| `github-snapshots/allanchan339-vllm-qwen35-enhanced.jinja` | `7b4ad5a7cd94` | https://github.com/allanchan339/vLLM-Qwen3.5-27B | u/Expensive-Register-5 (allanchan339) — M2.5-style interleaved-thinking template for vLLM stack (R5 reference, vLLM-only) | 2026-04-22 |
+| `github-snapshots/allanchan339-vllm-qwen35-enhanced.jinja` | `7b4ad5a7cd94` | https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix (`chat-template/qwen3.5-enhanced.jinja`; repo renamed from `vLLM-Qwen3.5-27B` May 2026, old URL still 301-redirects) | u/Expensive-Register-5 (allanchan339) — M2.5-style interleaved-thinking template for vLLM stack (R5 reference, vLLM-only) | 2026-04-22 |
+| `github-snapshots/allanchan339-vllm-qwen36-enhanced.jinja` | `5d7b7fbc6ec1` | https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix (`chat-template/qwen3.6-enhanced.jinja`, commit `13556c0` 2026-05-02) | u/Expensive-Register-5 (allanchan339) — Qwen3.6 variant. **Originator of the `<think>`-auto-close-before-`<tool_call>` fix**: commit timestamps confirm allanchan339 published it 2026-05-02; froggeric added a byte-equivalent block to its qwen3.6 template 2026-05-05 (commit `2179960`). Prior art for proposed Q3.6-2 / P11. | 2026-05-06 |
+| `github-snapshots/allanchan339-vllm-qwen36-README.md` | `79a914e71ff1` | https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix/blob/main/README.md | Companion to the `qwen3.6-enhanced.jinja` snapshot — documents the seven failure modes the template addresses (Jinja instability, transformers ≥5.3, FP8 precision drift, quantization tradeoffs, context-vs-VRAM, tool-call parser selection, env vars) and the vLLM/parser configuration each one requires. Cross-links allanchan339's r/Vllm `1skks8n` deep-dive. | 2026-05-06 |
 
 ## HuggingFace community templates (failed to snapshot)
 

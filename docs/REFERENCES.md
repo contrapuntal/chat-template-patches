@@ -23,6 +23,7 @@ ephemeral sources, see `docs/sources/README.md`.
 | [r/LocalLLaMA `1sh1bwv`](https://www.reddit.com/r/LocalLLaMA/comments/1sh1bwv/) | Gemma 4 is terrible with system prompts and tools | u/RealChaoz | Apr 2026 (124↑) | **G6** (primary thread) |
 | [r/Vllm `1skks8n`](https://www.reddit.com/r/Vllm/comments/1skks8n/) | Qwen 3.5 27B/35BA3B Tool Calling Issues: Why It Breaks & How I Fixed It | u/Expensive-Register-5 | Apr 2026 | catalog-only — vLLM-specific (R5 reference) |
 | [r/LocalLLM `1sqpsut`](https://www.reddit.com/r/LocalLLM/comments/1sqpsut/) | Qwen 3.6-35B-A3B: Reddit Asked, So I Tested If the 3.5 Tool Calling Fixes Carry Over | u/Expensive-Register-5 | Apr 2026 | **Q3.6-1** (field reports, contested signal on `preserve_thinking: true`); follow-up to 1skks8n. **Snapshotted** at `docs/sources/reddit/1sqpsut-...json` |
+| [r/LocalLLaMA `1t4cev0`](https://www.reddit.com/r/LocalLLaMA/comments/1t4cev0/) | Qwen3.6 merged chat template from allanchan339 and froggeric | u/fakezeta | May 2026 (100↑ / 0.95) | Q3.6-2 / P11 attribution context — surfaced the auto-close-`<think>`-before-`<tool_call>` fix and triggered the upstream timestamp diff that traced origination to allanchan339 (2026-05-02) rather than froggeric (added 2026-05-05). **Snapshotted** at `docs/sources/reddit/1t4cev0-...json`. Top comment (23↑) flags healthy community skepticism toward LLM-merged Jinja. |
 | [r/LocalLLaMA `1sgl3qz`](https://www.reddit.com/r/LocalLLaMA/comments/1sgl3qz/) | Gemma 4 on llama.cpp should be stable now | — | Apr 2026 | G3 stabilization context |
 
 ## HuggingFace discussions — Qwen publisher repos
@@ -206,7 +207,9 @@ Other relevant Qwen-publisher discussions:
 |---|---|---|---|
 | [`asf0/gemma4_jinja`](https://github.com/asf0/gemma4_jinja) | asfbrz96 | `docs/sources/github-snapshots/asf0-gemma4_jinja-chat_template.jinja` | **G2** |
 | [`markqvist/lc/blob/master/lc/quirks/qwen35_tool_thoughts.py`](https://github.com/markqvist/lc/blob/master/lc/quirks/qwen35_tool_thoughts.py) | markqvist | `docs/sources/github-snapshots/markqvist-lc-qwen35_tool_thoughts.py` | client-side workaround for llama.cpp #20837 |
-| [`allanchan339/vLLM-Qwen3.5-27B`](https://github.com/allanchan339/vLLM-Qwen3.5-27B) (`qwen3.5-enhanced.jinja`) | u/Expensive-Register-5 | `docs/sources/github-snapshots/allanchan339-vllm-qwen35-enhanced.jinja` | R5 reference (vLLM-only) |
+| [`allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix`](https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix) (`chat-template/qwen3.5-enhanced.jinja`; repo renamed from `vLLM-Qwen3.5-27B` May 2026) | u/Expensive-Register-5 | `docs/sources/github-snapshots/allanchan339-vllm-qwen35-enhanced.jinja` | R5 reference (vLLM-only) |
+| [`allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix`](https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix) (`chat-template/qwen3.6-enhanced.jinja`, commit `13556c0` 2026-05-02) | u/Expensive-Register-5 | `docs/sources/github-snapshots/allanchan339-vllm-qwen36-enhanced.jinja` | **Q3.6-2 / P11 originator** — the `<think>`-auto-close-before-`<tool_call>` block first appears here on 2026-05-02; froggeric copied the byte-equivalent block into its qwen3.6 template on 2026-05-05 (commit `2179960`). |
+| [`allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix`](https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix) (`README.md`) | u/Expensive-Register-5 | `docs/sources/github-snapshots/allanchan339-vllm-qwen36-README.md` | Documents the seven failure modes the template addresses + vLLM/parser configuration recommendations. |
 | [`Addy-ad/AIstuff/tree/main/lms`](https://github.com/Addy-ad/AIstuff/tree/main/lms) | u/Addyad | not snapshotted (batch script, not a template) | LM Studio model.yaml batch generator |
 
 ## GitHub — community templates (HF)
@@ -214,6 +217,7 @@ Other relevant Qwen-publisher discussions:
 | Repo | Status |
 |---|---|
 | [`barubary/qwen3.5-barubary-attuned-chat-template`](https://huggingface.co/barubary/qwen3.5-barubary-attuned-chat-template) | **401 Unauthorized at fetch time** (gated, private, or deleted). Snapshot pending. Source for catalog entries P6, P7, P8, P9, P10, R2 |
+| [`froggeric/Qwen-Fixed-Chat-Templates`](https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates) (`qwen3.5/`, `qwen3.6/`) | Live, accessible. Companion source to allanchan339 in r/LocalLLaMA `1t4cev0`. Initial qwen3.6 upload `e1eb965` 2026-05-01 did **not** include the `<think>`-auto-close block; commit `2179960` 2026-05-05 added it (byte-equivalent to allanchan339's earlier `13556c0`). Snapshot deferred — re-fetch via `huggingface.co/api/models/froggeric/Qwen-Fixed-Chat-Templates/commits/main` if needed. Used for attribution audit on Q3.6-2 / P11. |
 
 ## Pastebins (snapshotted)
 
@@ -231,6 +235,7 @@ Other relevant Qwen-publisher discussions:
 | [`gist.github.com/aldehir/de036c259ecfe2571b9f1e573f9340e7`](https://gist.github.com/aldehir/de036c259ecfe2571b9f1e573f9340e7) | aldegr (GH `aldehir`) | `docs/sources/gists/aldehir-de036c259-gemma4-open-webui.jinja` | **G2** alt fix; cross-referenced from llama.cpp PR #21760 |
 | [`gist.github.com/sudoingX/c2facf7d8f7608c65c1024ef3b22d431`](https://gist.github.com/sudoingX/c2facf7d8f7608c65c1024ef3b22d431) | sudoingX | `docs/sources/gists/sudoingX-c2facf7d-qwen35-27b-fixed.jinja` | parallel rediscovery of P10 + R1 |
 | [`gist.github.com/lekoOwO/c6aed944a636abccfe2c3912be34b904`](https://gist.github.com/lekoOwO/c6aed944a636abccfe2c3912be34b904) | lekoOwO | `docs/sources/gists/lekoOwO-c6aed944-qwen35-fork.jinja` | fork of sudoingX |
+| [`gist.github.com/fakezeta/9e8e039c60332fcb143c6e805558afe0`](https://gist.github.com/fakezeta/9e8e039c60332fcb143c6e805558afe0) | fakezeta | `docs/sources/gists/fakezeta-9e8e039c-qwen36-merged.jinja` | Q3.6-2 / P11 attribution context — derivative LLM-assisted merge of allanchan339 + froggeric Qwen3.6 templates; also adds a `</thinking>` rfind branch in the auto-close block that neither parent has. |
 
 ## Standards / external docs
 
@@ -245,7 +250,7 @@ Names of authors / reporters cited from at least one source above:
 
 aldegr (GH `aldehir`), allanchan339, asfbrz96, Addyad, barubary, berkidem,
 CMay, deladuck, deven367, Dopey24, Evita, ex-arman68, fairydreaming,
-FastHotEmu, froggeric, Galunid, gelim, Giant-Space-Bee, Glademist, Gohab2001,
+fakezeta, FastHotEmu, froggeric, Galunid, gelim, Giant-Space-Bee, Glademist, Gohab2001,
 Goulustis, grapevine-AI, jrp2014, jpohhhh / jpohhhhh, Jacksao1970,
 kik4444, lacerbi, latent-variable, lekoOwO, lucksufe, manfred_exz,
 markqvist, mlhher, NatTuck, nightmedia, nnorris7, No_Information9314,

@@ -1,0 +1,398 @@
+# Running Qwen3.5-27B on Mixed GPU Setup: From Pain to Success
+
+If this repo helped you run Qwen3.5-27B successfully on mixed GPU setups, please consider giving it a ⭐ star on GitHub!
+
+## chat-template 
+chat-template is located in `chat-template` folder, where Qwen3.5 and Qwen3.6 has different templates.
+
+**📖 Read the full story**: [Reddit Deep Dive - Qwen 3.5 Tool Calling Issues: Why It Breaks & How I Fixed It](https://www.reddit.com/r/Vllm/comments/1skks8n/qwen_35_27b35ba3b_tool_calling_issues_why_it/)
+
+## Success Story: Knowledge Platform
+
+**This configuration now powers a production knowledge graph extraction system** - see [qwen_own_project](https://github.com/allanchan339/qwen_own_project) for the complete working example.
+
+### Test Setup & Results
+
+The configuration was validated through a comprehensive stability test documented in the [Knowledge Platform README](https://github.com/allanchan339/qwen_own_project/blob/main/README.md):
+
+- **Test Duration**: 1h 9m continuous agentic session (without delegation of sub-agent)
+- **Token Usage**: 138.2k tokens
+- **Workload**: Full-stack application development (FastAPI backend + React frontend)
+- **Tool Calling**: Stable throughout session with XML parser
+- **Reasoning**: M2.5-style interleaved thinking maintained coherence
+- **Result**: Successfully built a production-ready knowledge graph platform
+
+**Key Achievement**: The LLM autonomously built the entire platform in 18 minutes of uninterrupted work, demonstrating stable long-context reasoning and reliable tool calling on mixed GPU hardware.
+
+See [qwen_own_project README](https://github.com/allanchan339/qwen_own_project/blob/main/README.md) for complete test methodology and results.
+
+---
+
+## Installation
+
+1. **Install dependencies**:
+   ```bash
+   uv sync
+   ```
+
+2. **Configure for your hardware**:
+   - Edit the appropriate `start_vllm_{name}.sh` script for your setup
+   - Adjust GPU memory utilization, tensor parallelism, and context length as needed
+   - Available scripts:
+     - `start_vllm_FP8.sh` - Best accuracy (48GB VRAM)
+     - `start_vllm_autoround.sh` - Lower VRAM usage (~44GB)
+
+3. **Start the server**:
+   ```bash
+   bash start_vllm_{name}.sh
+   ```
+
+## Hardware & Environment
+
+### Mixed GPU Setup
+- **RTX 4090** (SM89) - 24GB VRAM
+- **RTX 3090** (SM80) - 24GB VRAM
+- Intel i9-13900K - 32GB RAM
+- **Total VRAM**: 48GB
+
+### Software Stack
+- Windows 11 + WSL2 Ubuntu 22.04
+- NVIDIA Driver: 591.86
+- CUDA: 12.8
+- vLLM: 0.19.0
+- Transformers: 5.5+
+
+---
+
+## Quick Start (Working Configuration)
+
+### Recommended: FP8 Quantization (48GB VRAM)
+
+**For users with full 48GB VRAM available** (no GUI, no other GPU tasks):
+
+```bash
+./start_vllm_FP8.sh
+```
+
+This uses:
+- **Tensor Parallelism (TP=2)** - splits model across both GPUs
+- **FP8 KV Cache** - reduces memory overhead
+- **Custom Jinja template** - stable tool calling with reasoning
+- **FlashInfer backend** - optimized attention kernels
+- **219k context length** - maximum supported
+
+### For Limited VRAM (<48GB Available)
+
+**If you need VRAM for GUI or other tasks** (~44GB available):
+
+```bash
+./start_vllm_autoround.sh
+```
+
+**Tradeoffs**:
+- ✅ Stable tool calling with `qwen3.5-enhanced.jinja` template
+- ✅ Saves ~4GB VRAM vs FP8 (good for GUI/other tasks)
+- ⚠️ Higher perplexity than BF16/FP8 (some accuracy loss)
+- ⚠️ INT4 quantization not lossless (vs FP8 near-lossless)
+
+**Use this if**: You must save VRAM and accept accuracy tradeoffs
+**Do NOT use**: Qwopus3.5-AWQ series (format drift after 65K tokens, see Problem 3)
+
+---
+
+## Problems Solved (in Priority Order)
+
+### Problem 1: Jinja Template Instability (CRITICAL - MUST FIX FIRST)
+
+**The PRIMARY issue that breaks Qwen3.5-27B but not larger models (122B+).**
+
+#### The Problem
+
+The official `qwen3.5_official.jinja` template has edge cases that cause instability:
+
+1. **Tool calling mid-thought**: Model generates `</think>` tags without properly closing `<think>` blocks
+2. **Premature stops**: XML tool calls trigger `<stop>` tokens incorrectly
+3. **Reasoning leakage**: Historical thinking blocks not properly hidden from context
+
+**Why 27B vs 122B+?**
+- Smaller models have less robust instruction following
+- Edge cases in template logic that larger models handle gracefully
+- Distillation artifacts from training data
+
+#### The Solution: Custom Template
+
+Use `qwen3.5-enhanced.jinja` which implements M2.5-style interleaved thinking:
+
+```bash
+--chat-template qwen3.5-enhanced.jinja
+```
+
+**Key improvements**:
+- Proper `</thinking>` tag handling before tool calls
+- Historical reasoning hidden, current reasoning preserved
+- XML format that avoids `<stop>` token issues
+- Robust edge case handling for smaller models
+
+**CRITICAL**: vLLM does NOT auto-detect templates. You MUST manually specify:
+```bash
+vllm serve ... --chat-template qwen3.5-enhanced.jinja ...
+```
+
+Without this flag, the model will use the default template and exhibit instability regardless of other optimizations.
+
+---
+
+### Problem 2: Version Compatibility
+
+**Issue**: vLLM 0.19.0 partially supports Transformers 5, but defaults to 4.49. Qwen3.5-27B requires Transformers 5.3+ for new RoPE implementation.
+
+**Solution**:
+```bash
+uv pip install -U transformers  # Upgrade to 5.5+
+```
+
+---
+
+### Problem 3: Mixed GPU Precision Drift (IMPORTANT for Mixed GPU)
+
+**The Issue**: Tensor Parallelism (TP mode) splits matrix multiplication across GPUs. Different compute capabilities (SM80 vs SM89) use different FP8 implementations.
+
+**Why It Matters**:
+- RTX 4090 (SM89): Native FP8 W8A8 tensor cores
+- RTX 3090 (SM80): No native FP8, falls back to W8A16
+- **Problem**: Different precision → mismatched results → error accumulation
+
+**The Fix: Force Consistent FP8 Behavior**
+```bash
+export VLLM_TEST_FORCE_FP8_MARLIN=1  # Critical: Force 4090 to use W8A16 (match 3090)
+```
+
+**Why this works**:
+- Without this flag: 4090 uses native W8A8, 3090 uses W8A16 → precision drift
+- With this flag: Both GPUs use Marlin W8A16 → consistent results
+
+**Additional NCCL Tuning** (provides stability margin):
+```bash
+export NCCL_P2P_DISABLE=1    # Disable P2P communication
+export NCCL_IB_DISABLE=1     # Force PCIe
+export NCCL_ALGO=Ring        # Stable algorithm
+```
+
+**Important**: `VLLM_TEST_FORCE_FP8_MARLIN=1` is critical for mixed GPU setups. NCCL tuning provides additional stability margin.
+
+---
+
+### Problem 4: Quantization Tradeoffs
+
+**FP8 Quantization (RECOMMENDED)**:
+- **Pros**: Near-lossless accuracy vs FP16/BF16, native support on RTX 4090
+- **Cons**: RTX 3090 falls back to W8A16, potential precision drift (fixed with `VLLM_TEST_FORCE_FP8_MARLIN=1`)
+- **Best for**: 48GB VRAM setups needing maximum context length (219k) + best accuracy
+
+**AutoRound INT4 (OPTIONAL for Limited VRAM)**:
+- **Pros**: Saves ~4GB VRAM vs FP8, stable tool calling WITH `qwen3.5-enhanced.jinja`
+- **Cons**: Higher perplexity than FP8/BF16 (some accuracy loss), INT4 not lossless
+- **Only use if**: You must save VRAM for GUI/other tasks AND accept accuracy tradeoffs
+
+**⚠️ AVOID: Qwopus3.5 Series (SFT-Distilled from Claude)**:
+- **Issue**: SFT shifted tool calling from `qwen3_xml` → `hermes` (JSON)
+- **Symptom**: Works fine for first ~65K tokens, then **mixes XML and JSON formats**
+- **Root cause**: SFT doesn't maintain format consistency like base model fine-tuning
+- **Affected models**: All `QuantTrio/Qwopus3.5-*`, `Jackrong/Qwen3.5-*-Claude-*`, etc.
+- **Recommendation**: Do NOT use for long-context work (>65K tokens)
+
+**Note**: AWQ quantization itself is fine. The issue is specifically with SFT-distilled variants that changed the output format.
+
+**⚠️ CRITICAL WARNING: Avoid Qwopus3.5 Series for Long Context**
+
+Models like `QuantTrio/Qwopus3.5-27B-v3-AWQ` are SFT-distilled from Claude 4.6 Opus:
+- **Shifted tool calling format**: From `qwen3_xml` → `hermes` (JSON-based)
+- **Appears stable initially**: Works fine for first ~65K tokens
+- **Fails in long context**: After 65K+ tokens, output **mixes XML and JSON formats**
+- **Root cause**: SFT doesn't maintain format consistency as well as base model fine-tuning
+
+**Why this happens**: SFT (Supervised Fine-Tuning) changes the model's output distribution to match Claude's Hermes format, but doesn't fully align the underlying token probabilities. In long contexts (>65K tokens), the model drifts between its original Qwen XML format and the SFT'd JSON format.
+
+**Recommendation**: For long-context agentic work (>65K tokens), use official `Qwen/Qwen3.5-27B-FP8` with custom Jinja template. Only consider AutoRound (INT4) if you must save VRAM and accept stability tradeoffs.
+
+---
+
+### Problem 5: Context Length vs VRAM
+
+**VRAM Breakdown (48GB Total)**:
+
+| Component | FP8 (TP Mode) | AWQ (PP Mode) |
+|-----------|---------------|---------------|
+| Model Weights | ~16-18 GB | ~16-18 GB |
+| KV Cache (219k context) | ~18-20 GB | N/A |
+| KV Cache (100k context) | N/A | ~18-22 GB |
+| CUDA Graphs | ~2 GB | ~2 GB |
+| System + Headroom | ~2 GB | ~2 GB |
+| **Total** | **~38-42 GB** | **~38-44 GB** |
+
+**Key Insight**: TP mode with FP8 KV cache achieves 219k context. PP mode with AWQ is limited to ~100k due to doubled KV cache allocation.
+
+---
+
+### Problem 6: Tool Call Parser Selection (`qwen3_xml` vs `qwen3_coder`)
+
+**⚠️ Deviation from Official Recommendation**
+
+The [official Qwen3.5-27B-FP8 README](https://huggingface.co/Qwen/Qwen3.5-27B-FP8) recommends `--tool-call-parser qwen3_coder`. However, our testing shows `qwen3_xml` is significantly more stable for long-context agentic work.
+
+**Recommendation**: Use `--tool-call-parser qwen3_xml` (NOT `qwen3_coder`)
+
+#### Why `qwen3_xml` is More Stable (vLLM Source Code Analysis)
+
+**1. Robust XML Parsing vs Fragile Regex**
+- **`qwen3_coder`**: Uses regex-based string extraction that breaks on special characters
+- **`qwen3_xml`**: Uses Python's robust C-based `xml.parsers.expat` engine for native XML streaming
+
+**2. Special Character Handling**
+- **`qwen3_coder`**: Code with angle brackets (`if (a < b)`) breaks regex patterns
+- **`qwen3_xml`**: Auto-sanitizes special chars (`<`, `>`, `&`, quotes) before parsing
+
+**3. Complex JSON Support**
+- **`qwen3_coder`**: Attempts to parse nested JSON during streaming → corruption
+- **`qwen3_xml`**: Deferred parsing - waits for full parameter block before `json.loads`
+
+**4. Auto-Healing Malformed XML**
+- **`qwen3_coder`**: Fails on truncated output or missing closing tags
+- **`qwen3_xml`**: Auto-injects missing closing tags for robustness
+
+---
+
+### Problem 7: Environment Variable Configuration
+
+#### Safe, Speed-Focused Env Vars
+```bash
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+export CUDA_VISIBLE_DEVICES=0,1
+export NCCL_CUMEM_ENABLE=0
+export VLLM_ENABLE_CUDAGRAPH_GC=1
+export VLLM_USE_FLASHINFER_SAMPLER=1
+export OMP_NUM_THREADS=4
+
+# NCCL tuning for mixed GPU topology
+export NCCL_P2P_DISABLE=1
+export NCCL_IB_DISABLE=1
+export NCCL_ALGO=Ring
+
+# FP8 configuration (CRITICAL for mixed GPU)
+export VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1
+export VLLM_TEST_FORCE_FP8_MARLIN=1  # Force 4090 to use W8A16 (match 3090, avoid precision drift)
+```
+
+### vLLM Serve Command
+
+```bash
+vllm serve Qwen/Qwen3.5-27B-FP8 \
+  --served-model-name Qwen3.5-27B \
+  --chat-template qwen3.5-enhanced.jinja \
+  --attention-backend FLASHINFER \
+  --trust-remote-code \
+  --tensor-parallel-size 2 \
+  --max-model-len 219520 \
+  --gpu-memory-utilization 0.92 \
+  --enable-auto-tool-choice \
+  --enable-chunked-prefill \
+  --enable-prefix-caching \
+  --max-num-batched-tokens 4096 \
+  --max-num-seqs 4 \
+  --kv-cache-dtype fp8 \
+  --tool-call-parser qwen3_xml \
+  --reasoning-parser qwen3 \
+  --no-use-tqdm-on-load \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --language-model-only
+```
+
+---
+
+## Verification
+
+### Quick Test (curl)
+
+Test the setup with:
+
+```bash
+# Test basic generation
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vllm/Qwen3.5-27B",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "max_tokens": 100
+  }'
+
+# Test tool calling
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vllm/Qwen3.5-27B",
+    "messages": [{"role": "user", "content": "What is the weather in Tokyo?"}],
+    "tools": [{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]
+  }'
+```
+
+### Performance Benchmark
+
+For comprehensive benchmarking (throughput, latency, RPS):
+
+```bash
+./bench_vllm.sh
+```
+
+This runs vLLM's built-in benchmark with:
+- **50 concurrent prompts**
+- **2048 input tokens** each
+- **512 output tokens** each
+- **Random dataset** generation
+
+**Output includes**:
+- Total throughput (tokens/sec)
+- Requests per second (RPS)
+- Latency percentiles (TTFT, TPOT, P50, P95, P99)
+- GPU utilization metrics
+
+**Customize benchmark**:
+Edit `bench_vllm.sh` to change:
+- `INPUT_LEN` - Input token length (default: 2048)
+- `OUTPUT_LEN` - Output token length (default: 512)
+- `NUM_PROMPTS` - Number of prompts (default: 50)
+
+---
+
+## Troubleshooting
+
+### Issue: "Out of Memory" errors
+- Reduce `--gpu-memory-utilization` to 0.85
+- Reduce `--max-model-len` to 131072
+- Reduce `--max-num-seqs` to 2
+
+### Issue: Unstable tool calling
+- Verify `qwen3.5-enhanced.jinja` is in the working directory
+- Check `--tool-call-parser qwen3_xml` is set
+- **Do not use Qwopus3.5 series** for long-context work (format drift after 65K tokens)
+
+### Issue: Precision drift in long conversations
+- Verify all NCCL environment variables are set
+- Check `VLLM_TEST_FORCE_FP8_MARLIN=1` is set
+- Try `export NCCL_NVLS_DISABLE=1`
+
+---
+
+## References
+
+- **[Reddit: r/Vllm - Qwen 3.5 Tool Calling Issues Deep Dive](https://www.reddit.com/r/Vllm/comments/1skks8n/qwen_35_27b35ba3b_tool_calling_issues_why_it/)** - Detailed discussion of tool calling fixes, Jinja template issues, and mixed GPU precision drift
+- [vLLM Issue #34437](https://github.com/vllm-project/vllm/issues/34437) - Mixed GPU TP mode instability
+- [Reddit: r/LocalLLaMA - Original Tool Calling Fixes Thread](https://www.reddit.com/r/LocalLLaMA/comments/1sdhvc5/qwen_35_tool_calling_fixes_for_agentic_use_whats/) - Initial discussion
+- [Qwen3 Issue #1831](https://github.com/QwenLM/Qwen3/issues/1831) - Official model issues
+- [NVIDIA Forums](https://forums.developer.nvidia.com/t/success-with-quanttrio-qwen3-5-27b-claude-4-6-opus-reasoning-distilled-v2-awq/365416) - AWQ success reports (note: long-context issues not discussed)
+
+---
+
+## License
+
+MIT

@@ -553,7 +553,7 @@ matches how the community thinks about the fix.
     {%- set last_close_think = content.rfind('</think>') %}
     {%- set last_close_thinking = content.rfind('</thinking>') %}
     {%- set last_close = last_close_think if last_close_think > last_close_thinking else last_close_thinking %}
-    {%- set tool_pos = content.find('<tool_call>') %}
+    {%- set tool_pos = content.find('<tool_call>', last_think) %}
     {%- if last_close < last_think %}
         {%- if tool_pos > last_think %}
             {%- set content = content[:tool_pos] + '</think>' + content[tool_pos:] %}
@@ -565,6 +565,18 @@ matches how the community thinks about the fix.
 ```
 And extend the existing `</think>`-split extraction with an `elif`
 branch that splits on `</thinking>`.
+
+**Adversarial-review fix (2026-05-06).** The initial form used
+`content.find('<tool_call>')` (unscoped), which returned the FIRST
+`<tool_call>` in the assistant content regardless of position relative
+to `last_think`. If an EARLIER completed tool_call appeared before a
+LATER unclosed `<think>...<tool_call>` block, the auto-close would
+take the else branch and append `</think>` at end-of-content — leaving
+the wrapped tool_call still inside the unclosed think. Codex caught
+this in commit `bbce429`; the fix is `content.find('<tool_call>', last_think)`
+so the search only considers tool_calls AT OR AFTER the unclosed
+think. Regression covered by
+`test_q36_3_patched_handles_earlier_completed_tool_call`.
 
 **Verification fixture.** `tests/fixtures/qwen36_unclosed_think_before_tool_call.json`
 renders an assistant turn with `<think>...<tool_call>...</tool_call>`
@@ -733,13 +745,25 @@ system prompt itself.
 Both sentinels override any `enable_thinking` kwarg — sentinels take
 precedence as the more specific, per-request signal.
 
+**Conflict policy: rightmost-in-text wins.** When BOTH sentinels
+appear in the merged system text, the one whose rfind position is
+greater wins. Matches "last write wins" intuition for an explicit
+per-request override appended to an inherited default. Codex
+adversarial review (2026-05-06, fix in commit `bbce429`) caught the
+initial implementation, which processed `<|think_off|>` first then
+`<|think_on|>` in code order — so `<|think_on|>` always won regardless
+of textual position. Fixed by computing `rfind` for each and comparing
+positions before applying. Regression covered by
+`test_q36_5_conflicting_sentinels_rightmost_wins`.
+
 **Fix.** Three coordinated changes:
 
 1. Initialize a `ns_flags = namespace(enable_thinking=none)` and seed
    it from the kwarg if defined.
-2. After the merged system message is built, scan it for both
-   sentinels; on match, update `ns_flags.enable_thinking` and strip
-   the sentinel from `merged_system`.
+2. After the merged system message is built, compute
+   `_think_off_pos` and `_think_on_pos` via `rfind`; if either
+   sentinel is present, set `ns_flags.enable_thinking` per the
+   rightmost position and strip both sentinels from `merged_system`.
 3. In the generation prompt, replace
    `if enable_thinking is defined and enable_thinking is false` with
    `if ns_flags.enable_thinking is false`.

@@ -1,0 +1,114 @@
+--- a/templates/gemma4/upstream/26B-A4B-it.jinja	2026-05-06 00:00:00
++++ b/templates/gemma4/patched/26B-A4B-it.jinja	2026-05-06 00:00:00
+@@ -11,12 +11,39 @@
+                 description:<|"|>{{ value['description'] }}<|"|>
+                 {%- set add_comma = true -%}
+             {%- endif -%}
+-            {%- if value['type'] | upper == 'STRING' -%}
+-                {%- if value['enum'] -%}
+-                    {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
+-                    enum:{{ format_argument(value['enum']) }}
++            {%- set type_names = namespace(names=[]) -%}
++            {%- if value['type'] is defined and value['type'] -%}
++                {%- if value['type'] is string -%}
++                    {%- set type_names.names = [value['type'] | upper] -%}
++                {%- else -%}
++                    {%- set type_names.names = value['type'] | map('upper') | list -%}
+                 {%- endif -%}
+-            {%- elif value['type'] | upper == 'ARRAY' -%}
++            {%- endif -%}
++            {%- if value['anyOf'] is defined and value['anyOf'] -%}
++                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
++                anyOf:{{ format_argument(value['anyOf'], escape_keys=false) }}
++            {%- endif -%}
++            {%- if value['oneOf'] is defined and value['oneOf'] -%}
++                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
++                oneOf:{{ format_argument(value['oneOf'], escape_keys=false) }}
++            {%- endif -%}
++            {%- if value['allOf'] is defined and value['allOf'] -%}
++                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
++                allOf:{{ format_argument(value['allOf'], escape_keys=false) }}
++            {%- endif -%}
++            {%- if value['$ref'] is defined and value['$ref'] -%}
++                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
++                $ref:<|"|>{{ value['$ref'] }}<|"|>
++            {%- endif -%}
++            {%- if value['enum'] is defined and value['enum'] -%}
++                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
++                enum:{{ format_argument(value['enum']) }}
++            {%- endif -%}
++            {%- if value['const'] is defined -%}
++                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
++                const:{{ format_argument(value['const'], escape_keys=false) }}
++            {%- endif -%}
++            {%- if 'ARRAY' in type_names.names -%}
+                 {%- if value['items'] is mapping and value['items'] -%}
+                     {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
+                     items:{
+@@ -52,11 +79,11 @@
+                     }
+                 {%- endif -%}
+             {%- endif -%}
+-            {%- if value['nullable'] %}
++            {%- if value['nullable'] is defined and value['nullable'] %}
+                 {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
+                 nullable:true
+             {%- endif -%}
+-            {%- if value['type'] | upper == 'OBJECT' -%}
++            {%- if 'OBJECT' in type_names.names -%}
+                 {%- if value['properties'] is defined and value['properties'] is mapping -%}
+                     {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
+                     properties:{
+@@ -68,7 +95,7 @@
+                     {{- format_parameters(value, value['required'] | default([]), filter_keys=true) -}}
+                     }
+                 {%- endif -%}
+-                {%- if value['required'] -%}
++                {%- if value['required'] is defined and value['required'] -%}
+                     {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
+                     required:[
+                     {%- for item in value['required'] | default([]) -%}
+@@ -78,8 +105,15 @@
+                     ]
+                 {%- endif -%}
+             {%- endif -%}
+-            {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
+-            type:<|"|>{{ value['type'] | upper }}<|"|>}
++            {%- if value['type'] is defined and value['type'] -%}
++                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
++                {%- if value['type'] is string -%}
++                    type:<|"|>{{ value['type'] | upper }}<|"|>
++                {%- else -%}
++                    type:{{ format_argument(value['type'] | map('upper') | list) }}
++                {%- endif -%}
++            {%- endif -%}
++            }
+         {%- endif -%}
+     {%- endfor -%}
+ {%- endmacro -%}
+@@ -91,6 +125,9 @@
+         {%- if params['properties'] -%}
+             properties:{ {{- format_parameters(params['properties'], params['required']) -}} },
+         {%- endif -%}
++        {%- if params['$defs'] is defined and params['$defs'] -%}
++            $defs:{{ format_argument(params['$defs'], escape_keys=false) }},
++        {%- endif -%}
+         {%- if params['required'] -%}
+             required:[
+             {%- for item in params['required'] -%}
+@@ -120,6 +157,8 @@
+         {{- '<|"|>' + argument + '<|"|>' -}}
+     {%- elif argument is boolean -%}
+         {{- 'true' if argument else 'false' -}}
++    {%- elif argument is none -%}
++        {{- 'null' -}}
+     {%- elif argument is mapping -%}
+         {{- '{' -}}
+         {%- set ns = namespace(found_first=false) -%}
+@@ -351,4 +390,4 @@
+             {{- '<|channel>thought\n<channel|>' -}}
+         {%- endif -%}
+     {%- endif -%}
+-{%- endif -%}
+\ No newline at end of file
++{%- endif -%}

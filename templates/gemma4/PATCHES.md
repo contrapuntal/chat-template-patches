@@ -14,6 +14,11 @@ Opt-in patches not applied to `patched/`:
 - **G1** (`is sequence` minijinja gap) — apply only for LM Studio MCP path.
 - **G4** (ENABLE_THINKING/DISABLE_THINKING sentinel) — apply if your client
   doesn't reliably pass `chat_template_kwargs={"enable_thinking": ...}`.
+- **G8** (sigjhl JSON Schema robustness) — apply when your tools use
+  `anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const` schema patterns
+  (common for Pydantic-v2-generated MCP tools). Pending upstream merge
+  in HF discussion #91; reference patch in
+  `patches/gemma4/G8-jsonschema-robustness.patch`.
 
 Historical / configuration-side entries (not template patches):
 

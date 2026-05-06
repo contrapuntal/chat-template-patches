@@ -291,6 +291,29 @@ G6 (Gemma 4 tool-calling / system-prompt compliance grab-bag)
 
 G7 (covered above as a shipped patch).
 
+G8 (Gemma 4 tool-declaration JSON Schema robustness)
+  Reporter / Fix author : sigjhl —
+    r/LocalLLaMA "I stumbled on a Gemma 4 chat template bug for tools
+    and fixed it" (1syps6i, May 2026). Diagnosis assisted by GPT-5.5-high
+    reading llama-server verbose logs against a Pydantic-v2-codegen MCP
+    tool whose params use the `anyOf: [$ref, null]` nullable-ref pattern.
+    Same author opened HuggingFace discussion #91 on
+    google/gemma-4-31B-it (commit 4238b5d, 6 upvotes, ready-to-merge as
+    of fetch date) with the same fix scoped to the publisher repo.
+  Reference template : pastebin tBAHN6FV (sigjhl's iterated form,
+    superset of the HF PR — adds `oneOf` / `allOf` / `const` /
+    array-type / null rendering on top of the HF PR's anyOf/$ref/$defs
+    coverage). Snapshotted at
+    docs/sources/pastebins/tBAHN6FV-sigjhl-gemma4-jsonschema-robustness.jinja
+    (CRLF normalized to LF on import).
+  Template author : Google LLC (Gemma 4 chat template, modified).
+  Status : Opt-in — not in default templates/gemma4/patched/. Reference
+    patch ships at patches/gemma4/G8-jsonschema-robustness.patch.
+    Promote to "shipped" once HF disc #91 merges upstream and the
+    known object-combinator double-emission limitation (see
+    docs/PATCH-CATALOG.md § G8 "Known limitation in the source
+    pastebin") is addressed either upstream or in our snapshot.
+
 ----------------------------------------------------------------------
 Snapshot manifest
 ----------------------------------------------------------------------

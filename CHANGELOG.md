@@ -16,6 +16,10 @@ documented in `docs/PATCH-CATALOG.md`.
 - **Gemma 4** — patch G7 (empty-content tool-call assistant turn closure)
   for the 26B-A4B-it / 31B-it / E2B-it / E4B-it sizes. Bug originally reported
   upstream as Blaizzy/mlx-vlm#1033 and #1034.
+- **Gemma 4** — catalog entry G8 (sigjhl JSON Schema robustness; HF disc #91).
+  Opt-in reference patch in `patches/gemma4/G8-jsonschema-robustness.patch`;
+  not applied to default `patched/`. Pastebin source snapshotted at
+  `docs/sources/pastebins/tBAHN6FV-sigjhl-gemma4-jsonschema-robustness.jinja`.
 
 ### Changed
 

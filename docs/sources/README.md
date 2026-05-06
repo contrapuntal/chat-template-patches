@@ -35,6 +35,7 @@ Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
 | `pastebins/hnPGq0ht-sadman782-gemma4-alt-template.jinja` | `34dd08298843` | https://pastebin.com/raw/hnPGq0ht | Sadman782 — Gemma 4 alternative template recommended in r/LocalLLaMA "PSA: Gemma 4 template improvements" (G3-adjacent) | 2026-04-22 |
 | `pastebins/HDt34yA8-gohab2001-qwen35-model.yaml` | `48aef89dad89` | https://pastebin.com/raw/HDt34yA8 | u/Gohab2001 — example LM Studio `model.yaml` exposing `enableThinking` toggle (G5 / cross-cutting reference) | 2026-04-22 |
 | `pastebins/tBAHN6FV-sigjhl-gemma4-jsonschema-robustness.jinja` | `d6f83e366f35` | https://pastebin.com/raw/tBAHN6FV | u/sigjhl — iterated Gemma 4 chat template with JSON Schema robustness fixes (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type/null). Superset of the HF PR at `google/gemma-4-31B-it/discussions/91`. Reference template for **G8** (opt-in patch); CRLF normalized to LF on import. | 2026-05-06 |
+| `pastebins/tBAHN6FV-sigjhl-gemma4-jsonschema-robustness.jinja` | `d6f83e366f35` | https://pastebin.com/raw/tBAHN6FV | u/sigjhl — iterated Gemma 4 chat template with JSON Schema robustness fixes (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type/null). Superset of the HF PR at `google/gemma-4-31B-it/discussions/91`. Reference template for **G8** (opt-in patch); CRLF normalized to LF on import. | 2026-05-06 |
 
 ## Gists (medium decay risk — tied to GitHub account state)
 

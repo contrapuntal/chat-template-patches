@@ -46,6 +46,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | G5 | Gemma 4 | LM Studio thinking-toggle `model.yaml` workaround | **active** (config-side, not a template patch) | community-ephemeral (Reddit; example yaml **snapshotted** at `docs/sources/pastebins/HDt34yA8-...yaml`) | Gemma 4 (LM Studio non-community quants) |
 | G6 | Gemma 4 | Tool-calling / system-prompt compliance grab-bag | **active** (open upstream; configuration recommendations rather than a discrete template patch) | community-ephemeral (multiple Reddit threads) | Gemma 4 26B-A4B-it primarily |
 | G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **active** | derived (bug report: upstream-tracker `Blaizzy/mlx-vlm#1033` + `#1034`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+| G8 | Gemma 4 | JSON Schema robustness in tool declarations (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type) | **opt-in** (pending upstream merge — HF disc #91) | community-tracker (HF discussion + Reddit; **snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 
 ---
 
@@ -962,4 +963,92 @@ directions (`tests/test_render.py::test_g7_*`).
   upstream tracker — GitHub).
 - *Upstream status:* open as of fetch date; this patch predates any
   upstream resolution.
+
+---
+
+### G8 — Tool-declaration JSON Schema robustness (sigjhl)
+
+**Target:** Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it.
+
+**Status: opt-in.** Reference patch ships in
+`patches/gemma4/G8-jsonschema-robustness.patch` and is **not** applied
+to the default `patched/` set. Promote to active once
+[HF discussion #91](https://huggingface.co/google/gemma-4-31B-it/discussions/91)
+merges upstream (currently "ready to merge", 7 days old).
+
+**Failure mode.** Google's `format_parameters` macro only branches on a
+direct top-level `type` field. JSON Schema patterns that don't expose
+their meaning through a top-level `type` collapse to empty `type:""`
+declarations — the model never sees the actual parameter schema. Affected
+patterns include:
+
+- Nullable refs: `{"anyOf": [{"$ref": "#/$defs/X"}, {"type": "null"}]}`
+  (very common output of Pydantic v2 / OpenAPI 3.1 codegen).
+- Type unions written as arrays: `{"type": ["string", "null"]}`.
+- Composition: `oneOf`, `allOf`, `enum`, `const`.
+- Schema indirection: `$ref` / `$defs` (the entire `$defs` block was
+  dropped silently).
+- Item-schemas inside type-array params containing array or object.
+- Python `None` rendered as bare `None` instead of JSON `null`.
+
+Symptom: tool-call accuracy collapses on real-world MCP tools. The
+sigjhl repro on llama-server showed Qwen3.5-27B and gpt-oss-20b
+calling the same tool fine while Gemma 4-31B-it Q4_K_S could not —
+the difference traced to `type:""` rendering for an `anyOf`-nullable
+ref parameter.
+
+**Fix.** Rewrites `format_parameters` to:
+- Compute `type_names` once (string or list-of-strings) and branch on
+  `'ARRAY' in type_names.names` / `'OBJECT' in type_names.names`
+  rather than `value['type'] | upper == 'X'` (so type arrays match).
+- Emit `anyOf` / `oneOf` / `allOf` / `$ref` / `enum` / `const`
+  unconditionally when present, with `escape_keys=false` so nested
+  object keys render unquoted (matching the rest of the format).
+- Render the trailing `type:` field only when defined, supporting
+  both string and list forms.
+- Add `$defs` emission to `format_function_declaration`.
+- Add `null` rendering for Python `None` to `format_argument`.
+- Guard `value['nullable']` and `value['required']` accesses with
+  `is defined`.
+
+**Verification.** No fixture / test ships with G8 in this initial
+opt-in entry. Recommended verification before promoting to active:
+add `tests/fixtures/gemma4_anyof_ref_param.json` containing an
+`anyOf: [$ref, null]` parameter and assert that the rendered prompt
+preserves `anyOf:` (upstream renders `type:""`; G8-patched renders
+the structure).
+
+**Known limitation in the source pastebin.** When a parameter combines
+`type: "object"` with one of the new combinators (`anyOf` / `oneOf` /
+`allOf` / `$ref` / `$defs` / `enum` / `const`) AND has no explicit
+`properties`, the patched macro emits the combinator twice — once from
+the new top-level branch, once again from the existing OBJECT-fallback
+which recurses into `value` itself with `filter_keys=true`. The fallback
+is supposed to drop schema-meta keys, but `standard_keys` was not
+expanded to include the new combinators, so they're treated as child
+properties and reappear inside `properties:{ ... }`. Result is corrupted
+output like `properties:{anyOf:{...}}` for object-typed combinator
+schemas. The vast majority of real-world MCP tool params use combinators
+at the leaf-property level rather than the type-object level, so most
+schemas are unaffected — but this is worth flagging to sigjhl before
+HF disc #91 merges, and worth fixing locally if you opt into G8 with
+heavy combinator usage. The fix is a one-line addition to
+`standard_keys`: `['description', 'type', 'properties', 'required',
+'nullable', 'anyOf', 'oneOf', 'allOf', '$ref', 'enum', 'const']`.
+
+**Attribution.**
+- *Reporter / fix author:* sigjhl — Reddit
+  [r/LocalLLaMA `1syps6i`](https://www.reddit.com/r/LocalLLaMA/comments/1syps6i/)
+  ("I stumbled on a Gemma 4 chat template bug for tools and fixed it",
+  ~Apr 2026). Diagnosis assisted by GPT-5.5-high reading
+  llama-server verbose logs.
+- *Upstream PR:*
+  [`google/gemma-4-31B-it/discussions/91`](https://huggingface.co/google/gemma-4-31B-it/discussions/91)
+  (commit `4238b5d`), 6 upvotes, ready-to-merge.
+- *Reference template:* pastebin `tBAHN6FV` (sigjhl's iterated form
+  superset of the HF PR), **snapshotted** at
+  `docs/sources/pastebins/tBAHN6FV-sigjhl-gemma4-jsonschema-robustness.jinja`.
+- *Template author:* Google LLC (Gemma 4 chat template, modified).
+- *Provenance tier:* community-tracker (HF discussion + Reddit;
+  pastebin has a host-side delete risk so explicitly snapshotted).
 

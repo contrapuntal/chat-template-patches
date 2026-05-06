@@ -3,7 +3,7 @@
 Default stack applied in `patched/` (per-file basis):
 
 | File | Patches applied | Bytes vs upstream | Notes |
-|---|---|---:|---|
+|---|---|---|---|
 | `patched/26B-A4B-it.jinja` | G7 | -25 | Active fix for empty-content tool-call infinite loop |
 | `patched/31B-it.jinja` | G7 | -25 | Same template family as 26B-A4B |
 | `patched/E2B-it.jinja` | G7 | -25 | Small variant; lacks thinking-channel logic |
@@ -24,6 +24,24 @@ Historical / configuration-side entries (not template patches):
   `docs/PATCH-CATALOG.md`.
 - **G6** (tool-calling/system-prompt compliance) — runtime version
   recommendations, see `docs/PATCH-CATALOG.md`.
+
+## Upstream-shipped enhancements (2026-05-06 sync)
+
+The current `upstream/` snapshots include Google's PR #86 (commit
+`145dc25`, "fix(chat_template): update SI and tool call handling"):
+
+- `format_parameters` macro `filter_keys` parameter (suppresses
+  schema-meta keys when recursing into nested mappings without
+  explicit `properties`).
+- Multimodal first-system-message handling (string OR content-parts
+  sequence).
+- `captured_content` / `has_content` refactor of the assistant
+  turn-close logic.
+
+These are pure improvements with no downstream-patch interaction; G7
+remains correct on top of them (the bug G7 fixes is independent of
+how `has_content` is computed — `has_content` is also false for the
+empty-content tool-call case).
 
 ## Applying
 

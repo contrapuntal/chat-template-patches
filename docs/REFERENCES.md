@@ -25,7 +25,6 @@ ephemeral sources, see `docs/sources/README.md`.
 | [r/LocalLLM `1sqpsut`](https://www.reddit.com/r/LocalLLM/comments/1sqpsut/) | Qwen 3.6-35B-A3B: Reddit Asked, So I Tested If the 3.5 Tool Calling Fixes Carry Over | u/Expensive-Register-5 | Apr 2026 | **Q3.6-1** (field reports, contested signal on `preserve_thinking: true`); follow-up to 1skks8n. **Snapshotted** at `docs/sources/reddit/1sqpsut-...json` |
 | [r/LocalLLaMA `1t4cev0`](https://www.reddit.com/r/LocalLLaMA/comments/1t4cev0/) | Qwen3.6 merged chat template from allanchan339 and froggeric | u/fakezeta | May 2026 (100↑ / 0.95) | **Q3.6-3** attribution context (Qwen3.6 auto-close, shipped) and **P11** (Qwen3.5 sibling, deferred) — surfaced the auto-close-`<think>`-before-`<tool_call>` fix and triggered the upstream timestamp diff that traced origination to allanchan339 (2026-05-02) rather than froggeric (added 2026-05-05). **Snapshotted** at `docs/sources/reddit/1t4cev0-...json`. Top comment (23↑) flags healthy community skepticism toward LLM-merged Jinja. |
 | [r/LocalLLaMA `1sgl3qz`](https://www.reddit.com/r/LocalLLaMA/comments/1sgl3qz/) | Gemma 4 on llama.cpp should be stable now | — | Apr 2026 | G3 stabilization context |
-| [r/LocalLLaMA `1syps6i`](https://www.reddit.com/r/LocalLLaMA/comments/1syps6i/) | I stumbled on a Gemma 4 chat template bug for tools and fixed it | u/sigjhl | May 2026 | **G8** (reporter, fix author); HF PR #91. Pastebin `tBAHN6FV` is the iterated form (superset of the HF PR). **Snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja` |
 
 ## HuggingFace discussions — Qwen publisher repos
 
@@ -62,7 +61,6 @@ Other relevant Qwen-publisher discussions:
 | Thread | Repo | Topic | Status | Supports |
 |---|---|---|---|---|
 | [`google/gemma-4-31B-it/discussions/86`](https://huggingface.co/google/gemma-4-31B-it/discussions/86) ([commit `145dc25`](https://huggingface.co/google/gemma-4-31B-it/commit/145dc2508c480a64b47242f160d286cff94a2343)) | 31B-it (also propagated to 26B-A4B / E2B / E4B) | `fix(chat_template): update SI and tool call handling` (`filter_keys`, multimodal SI content, `has_content` refactor) | **MERGED** ~2026-04-28 by RyanMullins (author: dougreid, Google) | **G7** rebase context — current `upstream/` reflects this commit |
-| [`google/gemma-4-31B-it/discussions/91`](https://huggingface.co/google/gemma-4-31B-it/discussions/91) (commit `4238b5d`) | 31B-it | JSON Schema robustness (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type/null) | Open, ready to merge (6↑, 7d old) | **G8** (publisher PR) |
 | [`google/gemma-4-26B-A4B-it/discussions/15`](https://huggingface.co/google/gemma-4-26B-A4B-it/discussions/15) | 26B-A4B-it | Tool-call generation failure in deeper agentic loops (model says it will call, doesn't) | Open, repro provided to Google | **G6** field signal (not template-fixable) |
 
 ## HuggingFace discussions — community quants

@@ -17,6 +17,23 @@ documented in `docs/PATCH-CATALOG.md`.
   for the 26B-A4B-it / 31B-it / E2B-it / E4B-it sizes. Bug originally reported
   upstream as Blaizzy/mlx-vlm#1033 and #1034.
 
+### Changed
+
+- **Gemma 4 upstream sync (2026-05-06).** Bumped all four
+  `upstream/*.jinja` snapshots to Google's commit `145dc25` (PR #86,
+  "fix(chat_template): update SI and tool call handling"). Big-variant
+  SHAs `85a08664` → `94899c0f`; small-variant SHAs `781d10940` →
+  `33204f1a`. PR #86 ships `format_parameters` `filter_keys` parameter,
+  multimodal first-system-message handling, and `captured_content` /
+  `has_content` refactor of the assistant turn-close conditional.
+- **G7 patch regenerated** against the new upstream line anchors. Same
+  `{%- else -%}` rewrite; matched line is now
+  `{%- elif not (ns_tr_out.flag and not has_content) -%}` (was
+  `not message.get('content')`). G7's bug remains unfixed by PR #86 —
+  `has_content` evaluates falsy for the empty-content tool-call case
+  the same way `message.get('content')` did, so the `<|else|>` rewrite
+  is still required. All four `patched/*.jinja` regenerated.
+
 ### Notes
 
 - G3 (Gemma 4 Apr-2026 official template alignment) is upstream as of

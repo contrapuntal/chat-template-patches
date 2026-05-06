@@ -46,7 +46,6 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | G5 | Gemma 4 | LM Studio thinking-toggle `model.yaml` workaround | **active** (config-side, not a template patch) | community-ephemeral (Reddit; example yaml **snapshotted** at `docs/sources/pastebins/HDt34yA8-...yaml`) | Gemma 4 (LM Studio non-community quants) |
 | G6 | Gemma 4 | Tool-calling / system-prompt compliance grab-bag | **active** (open upstream; configuration recommendations rather than a discrete template patch) | community-ephemeral (multiple Reddit threads) | Gemma 4 26B-A4B-it primarily |
 | G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **active** | derived (bug report: upstream-tracker `Blaizzy/mlx-vlm#1033` + `#1034`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
-| G8 | Gemma 4 | JSON Schema robustness in tool declarations (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type) | **opt-in** (pending upstream merge — HF disc #91) | community-tracker (HF discussion + Reddit; **snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 
 ---
 
@@ -644,6 +643,43 @@ shape verbatim instead of round-tripping through `json.loads`. The
 template should accept either form rather than presupposing the
 upstream shim normalized them.
 
+**Why two grammars (intentional design decision, flagged by adversarial review).**
+The mapping path emits per-key `<parameter=NAME>VALUE</parameter>`
+blocks; the string-form path emits the JSON string verbatim inside
+`<function=...>` (e.g., `<function=get_weather>{"city":"SF"}</function>`).
+The shipped template tells the model to emit `<parameter>` form during
+generation (lines 60-66 of upstream), so a history turn rendered via
+the string path is **grammatically inconsistent** with how the model
+itself emits.
+
+We accept this inconsistency for two reasons:
+
+1. **Portability beats grammar uniformity.** Parsing a JSON string
+   inside Jinja requires a `from_json` filter that is **not in
+   standard Jinja2** — it's an extension missing from minijinja,
+   vLLM's renderer in many configurations, and the HF
+   `apply_chat_template` sandbox by default. Adopting it would
+   violate the repo's no-vendor-lock-in scope rule (3).
+2. **String-form is recovery, not happy-path.** Q3.6-4 fires only
+   when an OpenAI-compat shim has already converted the dict to a
+   string. The dominant case is the mapping path; the string path is
+   the recovery branch for clients that mangled the shape. Silent
+   drop (the upstream behavior) is strictly worse than grammar-shift.
+
+Downstream parsers (Qwen XML tool-call parser, `qwen3_xml`,
+`qwen3_coder`) generally accept either form — they extract the
+function name and treat anything inside `<function>...</function>` as
+the argument payload. If a deployment uses a parser strict about
+`<parameter>` form, the right fix is **upstream client normalization**
+(get the shim to preserve dict shape), not template-side JSON parsing.
+
+The pinned regression test
+`test_q36_4_patched_pins_raw_json_grammar_for_string_args` asserts the
+exact byte form (`<function=NAME>\n{...}\n</function>`) so future
+drift is caught explicitly. Codex adversarial review (2026-05-06)
+caught this grammar-shift; the response is to document and pin it as
+intentional, not to add a non-portable extension filter.
+
 **Verification fixture.**
 `tests/fixtures/qwen36_string_args_tool_call.json` — assistant turn
 with `tool_calls[0].function.arguments` set to a JSON string.
@@ -871,10 +907,11 @@ guidance.
 **Target:** Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it.
 
 **Failure mode.** When an assistant message contains tool calls (with
-matching `tool_responses` flagged) AND `content` is the empty string, the
-template's close-marker conditional evaluates:
+matching `tool_responses` flagged) AND `content` is empty (or post-strip
+empty after Google's PR #86 `has_content` refactor), the template's
+close-marker conditional evaluates:
 ```jinja
-{%- elif not (ns_tr_out.flag and not message.get('content')) -%}
+{%- elif not (ns_tr_out.flag and not has_content) -%}
     {{- '<turn|>\n' -}}
 {%- endif -%}
 ```
@@ -887,22 +924,33 @@ another tool call → **infinite tool-call loop**.
 `else` so the close marker is emitted whenever the special tool_call/no-flag
 branch above isn't taken:
 ```
-Old: {%- elif not (ns_tr_out.flag and not message.get('content')) -%}
+Old: {%- elif not (ns_tr_out.flag and not has_content) -%}
 New: {%- else -%}
 ```
 
-This is stronger than dropping just the `and not message.get('content')`
-clause — testing showed that the narrower fix (`not ns_tr_out.flag`) still
-suppresses the close marker when `ns_tr_out.flag` is true, which is the
-actual failure path. The `else` form always emits the close on the
-content/tool-response branch and leaves the upstream `<|tool_response>`
-emission on the pure-tool-call branch unchanged.
+This is stronger than dropping just the `and not has_content` clause —
+testing showed that the narrower fix (`not ns_tr_out.flag`) still suppresses
+the close marker when `ns_tr_out.flag` is true, which is the actual failure
+path. The `else` form always emits the close on the content/tool-response
+branch and leaves the upstream `<|tool_response>` emission on the
+pure-tool-call branch unchanged.
+
+**Interaction with PR #86.** Google's PR #86 (commit `145dc25`, merged
+~2026-04-28) refactored the conditional from `not message.get('content')`
+to `not has_content` (post-`strip_thinking` content length), but did
+**not** fix the underlying suppression bug. For the empty-content
+tool-call case, `has_content` is false for the same reason
+`message.get('content')` was falsy → close marker still suppressed.
+G7's `{%- else -%}` rewrite is required on top of PR #86. The
+regenerated patch (anchored at line 341 of the post-#86 upstream)
+ships in `patches/gemma4/G7-empty-content-tool-close.patch`.
 
 **Verification fixture.**
 `tests/fixtures/gemma4_empty_content_tool_call.json` — an assistant message
 with `tool_calls` + matching `tool_responses` + empty `content`. Upstream
 render is missing the `<turn|>` marker between this turn and the next
-prompt; patched render contains it.
+prompt; patched render contains it. Render harness asserts both
+directions (`tests/test_render.py::test_g7_*`).
 
 **Attribution.**
 - *Reporter:* reza-yousefi (GitHub) — `Blaizzy/mlx-vlm#1033` + `#1034`
@@ -914,3 +962,4 @@ prompt; patched render contains it.
   upstream tracker — GitHub).
 - *Upstream status:* open as of fetch date; this patch predates any
   upstream resolution.
+

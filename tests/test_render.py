@@ -242,3 +242,374 @@ def test_q36_1_patched_respects_explicit_false(template_pairs) -> None:
         "patched Qwen3.6 with preserve_thinking=False leaked historical "
         "reasoning — the opt-out escape hatch is broken"
     )
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-2 — Qwen3.6 empty-`<think>` history guard (R1 port)
+# ---------------------------------------------------------------------------
+
+# Q3.6-1 + Q3.6-2 stack on each other: Q3.6-1 flips preserve_thinking
+# default-on, which exposes the empty-`<think>` wrapper bug on history turns
+# with no reasoning_content. Q3.6-2 adds `and reasoning_content` so the
+# wrapper only fires when there is content to preserve. The "buggy" baseline
+# for Q3.6-2 is therefore the Q3.6-1-only state, not raw upstream — but we
+# capture both directions explicitly via the test names.
+
+
+def test_q36_2_q36_1_alone_emits_empty_think_wrapper(template_pairs) -> None:
+    """**Synthetic regression**: confirms that the Q3.6-1 patch alone
+    (without Q3.6-2) introduces the empty-`<think>` wrapper on history turns.
+    We synthesize the Q3.6-1-only state by reading the upstream and applying
+    just the Q3.6-1 polarity flip in-memory, so this test stays meaningful
+    even after Q3.6-2 is shipped on top."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    upstream_src = pair.upstream.read_text()
+    # Synthesize Q3.6-1-only state by inverse-of-Q3.6-2 substitution. Match
+    # against the upstream form (Q3.6-1 NOT applied) and apply just Q3.6-1.
+    q36_1_only = upstream_src.replace(
+        "(preserve_thinking is defined and preserve_thinking is true)",
+        "(preserve_thinking is not defined or preserve_thinking is not false)",
+    )
+    assert q36_1_only != upstream_src, (
+        "synthetic Q3.6-1-only construction failed — upstream template "
+        "shape changed; rewrite this test"
+    )
+    import jinja2  # local import keeps top-of-file imports stable
+    from conftest import make_env
+
+    env = make_env()
+    template = env.from_string(q36_1_only)
+    fixture = load_fixture("qwen36_empty_history_reasoning")
+    ctx = {
+        "bos_token": "",
+        "eos_token": "",
+        "pad_token": "",
+        "add_generation_prompt": True,
+        "add_vision_id": False,
+        "tools": None,
+    }
+    ctx.update(fixture)
+    out = template.render(**ctx)
+    assert "<think>\n\n</think>" in out, (
+        "Q3.6-1-only state should emit empty `<think>\\n\\n</think>` wrapper "
+        "on history turns — if it doesn't, the bug Q3.6-2 fixes was already "
+        f"absent and Q3.6-2 may be redundant. Output:\n{out!r}"
+    )
+
+
+def test_q36_2_patched_suppresses_empty_history_wrapper(template_pairs) -> None:
+    """With Q3.6-2 applied (current patched template), an assistant history
+    turn with empty reasoning_content must NOT emit the `<think>\\n\\n</think>`
+    wrapper. The exact assertion: there is exactly ONE `<think>` tag in the
+    output (the one belonging to the generation prompt at the end)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    fixture = load_fixture("qwen36_empty_history_reasoning")
+    out = render(pair.patched, fixture)
+    think_count = out.count("<think>")
+    assert think_count == 1, (
+        f"patched Qwen3.6 emitted {think_count} <think> blocks for an empty "
+        f"history reasoning fixture; expected 1 (generation prompt only). "
+        f"Q3.6-2's `and reasoning_content` guard is not taking effect.\n"
+        f"Output:\n{out!r}"
+    )
+    assert "<think>\n\n</think>" not in out, (
+        "patched Qwen3.6 still emits empty `<think>\\n\\n</think>` wrapper "
+        "on history turns with empty reasoning_content — Q3.6-2 broken."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-3 — Qwen3.6 auto-close <think> + </thinking> recognition
+# ---------------------------------------------------------------------------
+
+
+def _assistant_turn(out: str) -> str:
+    """Return the substring of `out` belonging to the (first) assistant
+    history turn — between `<|im_start|>assistant` and the matching
+    `<|im_end|>`."""
+    start = out.find("<|im_start|>assistant")
+    if start < 0:
+        return ""
+    end = out.find("<|im_end|>", start)
+    if end < 0:
+        return out[start:]
+    return out[start:end]
+
+
+def test_q36_3_upstream_leaves_think_unclosed_before_tool_call(template_pairs) -> None:
+    """Confirm the failure mode: when the assistant content carries
+    `<think>...<tool_call>` with no closing tag, upstream Qwen3.6 renders
+    that content verbatim — the `<tool_call>` ends up wrapped inside the
+    unclosed `<think>` block."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    fixture = load_fixture("qwen36_unclosed_think_before_tool_call")
+    out = render(pair.upstream, fixture)
+    asst = _assistant_turn(out)
+    # In upstream, no auto-close runs and the existing `</think>`-split
+    # extraction does nothing because there is no `</think>` in content.
+    # The literal `<think>` and `<tool_call>` both appear, with no
+    # `</think>` between them.
+    assert "<think>" in asst, "fixture didn't render the <think> tag"
+    assert "<tool_call>" in asst, "fixture didn't render the <tool_call> tag"
+    close_pos = asst.find("</think>")
+    tool_pos = asst.find("<tool_call>")
+    assert close_pos < 0 or close_pos > tool_pos, (
+        "upstream Qwen3.6 unexpectedly closed the <think> before the "
+        "<tool_call> — the bug Q3.6-3 fixes appears already absent. "
+        f"Assistant turn:\n{asst!r}"
+    )
+
+
+def test_q36_3_patched_auto_closes_think_before_tool_call(template_pairs) -> None:
+    """With Q3.6-3 applied, the assistant turn must contain `</think>`
+    BEFORE `<tool_call>` so downstream parsers see a closed reasoning
+    block."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    fixture = load_fixture("qwen36_unclosed_think_before_tool_call")
+    out = render(pair.patched, fixture)
+    asst = _assistant_turn(out)
+    think_pos = asst.find("<think>")
+    close_pos = asst.find("</think>", think_pos + 1)
+    tool_pos = asst.find("<tool_call>")
+    assert think_pos >= 0 and tool_pos >= 0, (
+        f"fixture rendering missing <think> or <tool_call>:\n{asst!r}"
+    )
+    assert 0 <= close_pos < tool_pos, (
+        f"Q3.6-3 broken — patched template did not inject </think> "
+        f"before <tool_call>. Positions: <think>@{think_pos} "
+        f"</think>@{close_pos} <tool_call>@{tool_pos}\n"
+        f"Assistant turn:\n{asst!r}"
+    )
+
+
+def test_q36_3_patched_recognizes_thinking_close_hallucination(template_pairs) -> None:
+    """Q3.6-3 also adds an `elif '</thinking>' in content` branch to the
+    reasoning_content extraction. When the model emits `</thinking>`
+    instead of `</think>`, the patched template must extract the
+    reasoning correctly — i.e., the literal `</thinking>` token must NOT
+    leak into the rendered output."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    # Synthesize the </thinking> hallucination case by editing the fixture
+    # in-memory rather than authoring a second JSON file. The base fixture's
+    # _description already covers this scenario.
+    base = load_fixture("qwen36_unclosed_think_before_tool_call")
+    payload = {
+        **base,
+        "messages": [
+            {"role": "user", "content": "Hi"},
+            {
+                "role": "assistant",
+                "content": "<think>some reasoning</thinking>final answer",
+            },
+            {"role": "user", "content": "Continue"},
+        ],
+    }
+    out = render(pair.patched, payload)
+    # The literal `</thinking>` token must not appear in the rendered output —
+    # the extractor should consume it and emit `</think>` (the canonical
+    # close form Qwen3.6 uses everywhere else).
+    assert "</thinking>" not in out, (
+        f"Q3.6-3 broken — `</thinking>` hallucination leaked into the "
+        f"rendered prompt. Output:\n{out!r}"
+    )
+    # And the canonical close form must appear (the template wrapping
+    # always emits `</think>` for history with reasoning_content).
+    assert "</think>" in out, (
+        f"Q3.6-3 broken — no canonical `</think>` close in output:\n{out!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-4 — Qwen3.6 tool-call string-argument passthrough (R2 port)
+# ---------------------------------------------------------------------------
+
+
+def test_q36_4_upstream_drops_string_arguments(template_pairs) -> None:
+    """Confirm the failure mode: upstream Qwen3.6 template only handles
+    `tool_call.arguments is mapping`, so when arguments arrive as a JSON
+    string the entire parameter body is dropped from the rendered prompt."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    fixture = load_fixture("qwen36_string_args_tool_call")
+    out = render(pair.upstream, fixture)
+    # The tool call block itself renders (function name + wrapper) but
+    # the marker embedded in the JSON-string arguments is dropped.
+    assert "<function=get_weather>" in out, (
+        "fixture didn't trigger the tool_calls branch at all — fixture"
+        " or template shape changed; review test"
+    )
+    assert "SF_STRING_ARG_MARKER" not in out, (
+        "upstream Qwen3.6 unexpectedly preserved string-form tool-call "
+        "arguments — Q3.6-4 may already be fixed upstream; update catalog "
+        f"status. Output:\n{out!r}"
+    )
+
+
+def test_q36_4_patched_emits_string_arguments_verbatim(template_pairs) -> None:
+    """With Q3.6-4 applied, JSON-string-form `arguments` must be emitted
+    verbatim inside the `<function=...>` … `</function>` block."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    fixture = load_fixture("qwen36_string_args_tool_call")
+    out = render(pair.patched, fixture)
+    assert "SF_STRING_ARG_MARKER" in out, (
+        "Q3.6-4 broken — string-form tool-call arguments are still being "
+        f"dropped. Output:\n{out!r}"
+    )
+    # Must appear inside the tool-call block, not somewhere stray.
+    tc_idx = out.find("<tool_call>")
+    end_idx = out.find("</tool_call>", tc_idx)
+    assert tc_idx >= 0 and end_idx > tc_idx, (
+        f"could not locate <tool_call>...</tool_call> bounds in output:\n{out!r}"
+    )
+    assert "SF_STRING_ARG_MARKER" in out[tc_idx:end_idx], (
+        "Q3.6-4 broken — string-form arguments emitted, but outside the "
+        f"tool_call block. Output:\n{out!r}"
+    )
+
+
+def test_q36_4_patched_preserves_mapping_arguments_path(template_pairs) -> None:
+    """Regression: the mapping-form `arguments` path (the dominant one)
+    must still wrap each key in `<parameter=NAME>` blocks. We synthesize
+    a mapping-args variant of the Q3.6-4 fixture in-memory."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    base = load_fixture("qwen36_string_args_tool_call")
+    mapping_variant = {
+        **base,
+        "messages": [
+            *base["messages"][:1],
+            {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "Need to call get_weather.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": {"city": "NYC_DICT_MARKER"},
+                        }
+                    }
+                ],
+            },
+            *base["messages"][2:],
+        ],
+    }
+    out = render(pair.patched, mapping_variant)
+    assert "NYC_DICT_MARKER" in out, (
+        f"Q3.6-4 broken the mapping-args path. Output:\n{out!r}"
+    )
+    assert "<parameter=city>" in out, (
+        f"Q3.6-4 broken — mapping args no longer render `<parameter=...>`:\n{out!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-5 — Qwen3.6 <|think_off|> / <|think_on|> system-message sentinels
+# ---------------------------------------------------------------------------
+
+
+def _generation_prompt(out: str) -> str:
+    """Return the substring of `out` from the LAST `<|im_start|>assistant`
+    onward — the generation prompt, where the post-Q3.6-5 thinking-mode
+    decision is observable as `<think>\\n` (open) vs
+    `<think>\\n\\n</think>\\n\\n` (closed)."""
+    idx = out.rfind("<|im_start|>assistant")
+    if idx < 0:
+        return ""
+    return out[idx:]
+
+
+def test_q36_5_upstream_passes_sentinels_through(template_pairs) -> None:
+    """Confirm the failure mode: upstream Qwen3.6 has no sentinel
+    awareness, so a `<|think_off|>` token in the system message renders
+    verbatim AND does not flip thinking off."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    fixture = load_fixture("qwen36_think_toggle_sentinels")
+    out = render(pair.upstream, fixture)
+    assert "<|think_off|>" in out, (
+        "fixture didn't emit the sentinel into upstream output — fixture "
+        "shape changed; review test"
+    )
+    gen = _generation_prompt(out)
+    # Default-on thinking → upstream emits `<think>\n` (open)
+    assert gen.endswith("<think>\n"), (
+        "upstream Qwen3.6 unexpectedly closed thinking by default — "
+        f"check enable_thinking handling. Generation prompt:\n{gen!r}"
+    )
+
+
+def test_q36_5_patched_strips_think_off_and_closes_thinking(template_pairs) -> None:
+    """With Q3.6-5, `<|think_off|>` in the system message must:
+    1. Be stripped from the rendered system block.
+    2. Force the generation prompt to emit the closed `<think>\\n\\n</think>\\n\\n`
+       form."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    fixture = load_fixture("qwen36_think_toggle_sentinels")
+    out = render(pair.patched, fixture)
+    assert "<|think_off|>" not in out, (
+        f"Q3.6-5 broken — `<|think_off|>` sentinel leaked into output:\n{out!r}"
+    )
+    gen = _generation_prompt(out)
+    assert gen.endswith("<think>\n\n</think>\n\n"), (
+        "Q3.6-5 broken — `<|think_off|>` sentinel did not flip thinking "
+        f"off in the generation prompt. Got:\n{gen!r}"
+    )
+
+
+def test_q36_5_think_on_sentinel_overrides_explicit_kwarg(template_pairs) -> None:
+    """`<|think_on|>` must take precedence over an explicit
+    `enable_thinking=False` kwarg — the sentinel is the more specific,
+    per-request control path."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    payload = {
+        "messages": [
+            {"role": "system", "content": "You are helpful.<|think_on|>"},
+            {"role": "user", "content": "Hi"},
+        ],
+        "add_generation_prompt": True,
+        "enable_thinking": False,
+    }
+    out = render(pair.patched, payload)
+    assert "<|think_on|>" not in out, (
+        f"Q3.6-5 broken — `<|think_on|>` sentinel leaked:\n{out!r}"
+    )
+    gen = _generation_prompt(out)
+    assert gen.endswith("<think>\n"), (
+        "Q3.6-5 broken — `<|think_on|>` did not override "
+        f"enable_thinking=False kwarg. Got:\n{gen!r}"
+    )
+
+
+def test_q36_5_kwarg_path_still_works_without_sentinel(template_pairs) -> None:
+    """Regression: when no sentinel is present, the existing
+    `enable_thinking=False` kwarg must still flip the generation prompt to
+    closed thinking."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    payload = {
+        "messages": [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hi"},
+        ],
+        "add_generation_prompt": True,
+        "enable_thinking": False,
+    }
+    out = render(pair.patched, payload)
+    gen = _generation_prompt(out)
+    assert gen.endswith("<think>\n\n</think>\n\n"), (
+        "Q3.6-5 regression — enable_thinking=False kwarg no longer flips "
+        f"thinking off. Got:\n{gen!r}"
+    )

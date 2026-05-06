@@ -1,0 +1,15 @@
+{
+  "_applies_to": ["qwen3.6"],
+  "_description": "Reproduction fixture for Q3.6-3 (auto-close <think> before <tool_call> + </thinking> hallucination recovery). The history assistant turn contains a `<think>...` block followed by a `<tool_call>` WITHOUT a `</think>` between them — simulating the model emitting a tool call mid-reasoning without closing the think tag. Without Q3.6-3 the unclosed think wraps around the tool call, breaking parsers; with Q3.6-3 the template injects `</think>` before the tool call boundary.",
+  "_bug": "Originated in allanchan339's qwen3.6-enhanced.jinja (commit 13556c0, 2026-05-02). Cross-referenced in r/LocalLLaMA 1t4cev0 (snapshotted). Generalized to recognize </thinking> hallucination in fakezeta's merged template (gist 9e8e039c, snapshotted).",
+  "messages": [
+    {"role": "user", "content": "Look up the weather"},
+    {
+      "role": "assistant",
+      "content": "<think>Let me check the weather tool<tool_call>\n<function=get_weather>\n<parameter=city>\nSF\n</parameter>\n</function>\n</tool_call>"
+    },
+    {"role": "tool", "content": "Sunny, 72°F"},
+    {"role": "user", "content": "Thanks"}
+  ],
+  "add_generation_prompt": true
+}

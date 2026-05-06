@@ -1,0 +1,10 @@
+{
+  "_applies_to": ["qwen3.6"],
+  "_description": "Reproduction fixture for Q3.6-5 (Qwen3.6 <|think_off|> / <|think_on|> sentinels; R3 port + extension). The system message contains the literal sentinel `<|think_off|>` plus surrounding text. Without Q3.6-5, the sentinel passes through verbatim into the rendered system block and `enable_thinking` retains its template default. With Q3.6-5, the sentinel is stripped AND `enable_thinking` is flipped to false (so the generation prompt emits `<think>\\n\\n</think>\\n\\n` instead of just `<think>\\n`).",
+  "_bug": "R3 sibling for Qwen3.6. The <|think_on|> companion was introduced by froggeric in Qwen-Fixed-Chat-Templates (snapshotted at docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-{e1eb965,2179960}.jinja). The fakezeta merged template (gist 9e8e039c, snapshotted) uses both forms.",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant.<|think_off|>\nKeep replies brief."},
+    {"role": "user", "content": "What is 2+2?"}
+  ],
+  "add_generation_prompt": true
+}

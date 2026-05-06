@@ -54,6 +54,14 @@ Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
 | `github-snapshots/allanchan339-vllm-qwen36-enhanced.jinja` | `5d7b7fbc6ec1` | https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix (`chat-template/qwen3.6-enhanced.jinja`, commit `13556c0` 2026-05-02) | u/Expensive-Register-5 (allanchan339) — Qwen3.6 variant. **Originator of the `<think>`-auto-close-before-`<tool_call>` fix**: commit timestamps confirm allanchan339 published it 2026-05-02; froggeric added a byte-equivalent block to its qwen3.6 template 2026-05-05 (commit `2179960`). Prior art for proposed Q3.6-2 / P11. | 2026-05-06 |
 | `github-snapshots/allanchan339-vllm-qwen36-README.md` | `79a914e71ff1` | https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix/blob/main/README.md | Companion to the `qwen3.6-enhanced.jinja` snapshot — documents the seven failure modes the template addresses (Jinja instability, transformers ≥5.3, FP8 precision drift, quantization tradeoffs, context-vs-VRAM, tool-call parser selection, env vars) and the vLLM/parser configuration each one requires. Cross-links allanchan339's r/Vllm `1skks8n` deep-dive. | 2026-05-06 |
 
+## HuggingFace community templates (snapshotted)
+
+| File | SHA-256 | Original URL | Author / context | Fetch date |
+|---|---|---|---|---|
+| `hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen35.jinja` | `1acf46b19dbb` | https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates/raw/main/qwen3.5/chat_template.jinja | froggeric — Qwen3.5 fixes (developer role, `</think>`/`</thinking>` recognition, string-arg tojson guard, etc). Companion to the Qwen3.6 snapshots; cross-referenced from r/LocalLLaMA `1t4cev0` and used by fakezeta as one of the two parents of the merged template at `gists/fakezeta-9e8e039c-...`. | 2026-05-06 |
+| `hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-e1eb965.jinja` | `ce3f4fafa573` | https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates/raw/e1eb965/qwen3.6/chat_template.jinja | froggeric — initial qwen3.6 upload (2026-05-01). **Crucially does NOT contain the `<think>`-auto-close-before-`<tool_call>` block** — proof for the attribution claim that allanchan339 (commit `13556c0`, 2026-05-02) originated that fix, not froggeric. | 2026-05-06 |
+| `hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-2179960.jinja` | `94e944287ffa` | https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates/raw/2179960/qwen3.6/chat_template.jinja | froggeric — qwen3.6 update on 2026-05-05 that **adds** the auto-close block, byte-equivalent to allanchan339's earlier `13556c0`. The `diff -u e1eb965 2179960` is the smoking gun for the attribution chain. | 2026-05-06 |
+
 ## HuggingFace community templates (failed to snapshot)
 
 | Source | Status | Notes |

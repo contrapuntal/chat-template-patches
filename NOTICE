@@ -100,6 +100,103 @@ Patch Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
                     tool-call-parser instability. See PATCH-CATALOG
                     Q3.6-1 "Field reports" for verbatim quotes.
 
+Patch Q3.6-2 — Qwen3.6 empty-<think> history guard (R1 port)
+  Reporter        : Giant-Space-Bee (GitHub) — QwenLM/Qwen3 issue #1826,
+                    "Chat template breaks KV-cache reuse when
+                    enable_thinking=false" (with a ~25× TTFT benchmark
+                    measured on Qwen3.5-35B-A3B turn-2+). Same failure
+                    mode applies to Qwen3.6 once Q3.6-1 flips
+                    preserve_thinking on.
+  Fix author      : latent-variable (HuggingFace) — opened the
+                    `and reasoning_content` minimal-form PR on every
+                    Qwen3.5 size; this repo applies the same pattern
+                    to Qwen3.6 on top of Q3.6-1. Mechanical port.
+  Template author : Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+  Stacks on       : Q3.6-1 — Q3.6-2's diff is against the
+                    Q3.6-1-applied state, not raw upstream. Both must
+                    be applied for the cumulative effect. See
+                    templates/qwen3.6/PATCHES.md "Patch stacking order".
+  Upstream status : not yet proposed against the Qwen3.6 publisher
+                    repo. The Qwen3.5 sibling (R1) is "ready to merge"
+                    via latent-variable's per-size PRs.
+
+Patch Q3.6-3 — Qwen3.6 auto-close <think> + </thinking> recognition
+  Reporter          : fakezeta (Reddit) — r/LocalLLaMA "Qwen3.6 merged
+                      chat template from allanchan339 and froggeric"
+                      (1t4cev0, 2026-05-04, 100 upvotes / 0.95 ratio).
+                      Surfaced both fixes in one merged template;
+                      cited as the discovery point that triggered the
+                      attribution diff captured in this repo.
+  Auto-close author : allanchan339 (GitHub) —
+                      vLLM-Qwen3-3.5-3.6-chat-template-fix,
+                      `chat-template/qwen3.6-enhanced.jinja` commit
+                      13556c0, 2026-05-02. Originator of the
+                      `<think>`-auto-close-before-`<tool_call>` fix.
+                      Verified by upstream commit-timestamp diff:
+                      froggeric did not include this block until commit
+                      2179960 on 2026-05-05 — see
+                      docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-{e1eb965,2179960}.jinja
+                      for the smoking gun. allanchan339 snapshot:
+                      docs/sources/github-snapshots/allanchan339-vllm-qwen36-enhanced.jinja.
+  </thinking> author: froggeric (HuggingFace) —
+                      Qwen-Fixed-Chat-Templates/qwen3.6/chat_template.jinja
+                      commit e1eb965, 2026-05-01. Originator of the
+                      `</thinking>` hallucination recognition for
+                      reasoning_content extraction. Snapshot:
+                      docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-e1eb965.jinja.
+  Combined form     : fakezeta — gist 9e8e039c, 2026-05-04. Neither
+                      parent uses both close-tag rfinds in the
+                      auto-close position search; this dual-rfind
+                      generalization is fakezeta's own contribution
+                      and is what we ship. Snapshot:
+                      docs/sources/gists/fakezeta-9e8e039c-qwen36-merged.jinja.
+  Template author   : Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+  Stacks on         : Q3.6-1 + Q3.6-2 — Q3.6-3's diff is against the
+                      Q3.6-2-applied state. See
+                      templates/qwen3.6/PATCHES.md "Patch stacking order".
+  Sibling deferred  : P11 is the Qwen3.5 catalog sibling for the
+                      auto-close fix — currently deferred (qwen3.5
+                      patched/ is empty in this release). See
+                      docs/PATCH-CATALOG.md § P11.
+
+Patch Q3.6-4 — Qwen3.6 tool-call string-argument passthrough (R2 port)
+  Reporter        : Same family as R2 (barubary's Fix 9 for Qwen3.5).
+                    Cross-confirmed for Qwen3.6 by:
+                    - u/Expensive-Register-5 (r/LocalLLM 1sqpsut),
+                      contrary signal during long agentic runs.
+                    - ml-explore/mlx-lm#1065 (the type-error variant).
+  Fix author      : barubary (Qwen3.5 origin via Fix 9); pattern
+                    reapplied to Qwen3.6 — mechanical port. Trim
+                    guard + trailing-newline behavior matches
+                    fakezeta's gist 9e8e039c (snapshotted at
+                    docs/sources/gists/fakezeta-9e8e039c-qwen36-merged.jinja).
+  Template author : Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+  Stacks on       : Q3.6-1 + Q3.6-2 + Q3.6-3.
+
+Patch Q3.6-5 — Qwen3.6 <|think_off|> / <|think_on|> sentinels
+  R3 base author    : u/ex-arman68 (Reddit) — r/LocalLLaMA "The
+                      definitive Qwen 3.5 jinja template" (1sis1vn);
+                      proposed the `<|think_off|>` delimited-token
+                      form for Qwen3.5 as the hardened replacement
+                      for P5's `/no_thinking` substring sentinel.
+                      Q3.6-5 ports that pattern to Qwen3.6.
+  <|think_on|>      : froggeric (HuggingFace) introduced the companion
+   companion author   `<|think_on|>` form in
+                      Qwen-Fixed-Chat-Templates/qwen3.6/chat_template.jinja
+                      (initial commit e1eb965, 2026-05-01). Snapshotted
+                      at docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-e1eb965.jinja.
+  Combined form     : fakezeta (gist 9e8e039c) — sentinel-overrides-kwarg
+                      precedence model is implicit in the merged
+                      template; Q3.6-5 makes that precedence explicit
+                      via the namespace-based override.
+  Template author   : Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+  Stacks on         : Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4.
+  Status note       : Opt-in. Modern llama.cpp `--reasoning on/off`
+                      (PR #20297) and oMLX server-side handling
+                      already provide a per-request escape hatch.
+                      Q3.6-5 is for older runtimes or per-request
+                      control via the system prompt itself.
+
 ----------------------------------------------------------------------
 Catalog-only patches (prior art and reporter attribution)
 ----------------------------------------------------------------------

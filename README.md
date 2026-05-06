@@ -125,8 +125,8 @@ See `docs/PATCH-CATALOG.md` for the full table. High-level summary:
 
 | Family | Patches in repo | Of which already upstream | Affecting active runtimes |
 |---|---:|---:|---:|
-| Qwen3.5 | P1–P10, R1–R3 (13 total) | P2, R1 (partial) | 8 |
-| Qwen3.6 | Q3.6-1 (1) | 0 | 1 (LM Studio MLX path only — oMLX auto-handles) |
+| Qwen3.5 | P1–P10, R1–R3, P11, P12 (15 total — all currently catalog-only / deferred) | P2, R1 (partial) | 8 |
+| Qwen3.6 | Q3.6-1 through Q3.6-5 (5 total) | 0 | 5 (Q3.6-5 opt-in for older runtimes; rest active) |
 | Gemma 4 | G1, G2, G4, G5, G7 (5 active; G3, G6 historical) | G3 | 4 |
 
 ## Contributing

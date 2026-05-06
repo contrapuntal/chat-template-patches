@@ -1,0 +1,24 @@
+{
+  "_applies_to": ["qwen3.6"],
+  "_description": "Reproduction fixture for Q3.6-4 (tool-call string-argument passthrough; R2 port). The history assistant turn carries a tool_calls entry whose `arguments` field is a JSON-encoded STRING rather than a mapping — the form OpenAI-compat clients send. Without Q3.6-4, the upstream `is mapping` guard drops the arguments silently. With Q3.6-4, the string is emitted verbatim inside the tool-call block.",
+  "_bug": "Same family as R2 (barubary's Fix 9 for Qwen3.5; ml-explore/mlx-lm#1065 for the type-error variant).",
+  "messages": [
+    {"role": "user", "content": "What's the weather in SF?"},
+    {
+      "role": "assistant",
+      "content": "",
+      "reasoning_content": "Need to call get_weather.",
+      "tool_calls": [
+        {
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\": \"SF_STRING_ARG_MARKER\"}"
+          }
+        }
+      ]
+    },
+    {"role": "tool", "content": "Sunny, 72"},
+    {"role": "user", "content": "Thanks"}
+  ],
+  "add_generation_prompt": true
+}

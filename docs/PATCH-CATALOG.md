@@ -32,7 +32,13 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | R1 | Qwen3.5 | `and reasoning_content` guard on history `<think>` emission | **upstream — ready to merge** (per-size HF PRs by latent-variable open) | upstream-tracker (HF discussion threads on publisher repos) | All Qwen3.5 |
 | R2 | Qwen3.5 | String-argument tool-call passthrough | **active** | community-tracker (barubary HF repo 401 at fetch time) | All Qwen3.5 |
 | R3 | Qwen3.5 | P5 sentinel hardening (`<\|think_off\|>`) + `ns_flags` simplification | **active** (revision of P5) | community-ephemeral (Reddit thread comments) | All Qwen3.5 |
+| P11 | Qwen3.5 | Auto-close unclosed `<think>` before `<tool_call>` | **deferred** (Qwen3.5 patched/ empty; ship alongside other Qwen3.5 patches) | community-tracker (allanchan339 — Qwen3.6 originator; not yet ported back to Qwen3.5) | All Qwen3.5 (only when P7 not also applied — P7 prevents this failure mode entirely by disabling thinking when tools defined) |
+| P12 | Qwen3.5 | Remove Python-only `\|items` filter from tool-call argument iteration | **deferred** (Qwen3.5 patched/ empty) | derived (verified by inspection of `templates/qwen3.5/upstream/35B-A3B.jinja` line 120) | All Qwen3.5 — minijinja and other C++-runtime Jinja implementations that don't support the `\|items` filter (Qwen3.6 doesn't use it; only Qwen3.5 affected) |
 | Q3.6-1 | Qwen3.6 | `preserve_thinking` default-on flip | **active** (LM Studio MLX path); **upstream-equivalent** in oMLX (auto-set server-side) | derived (bug report: community-ephemeral Reddit; cross-runtime fix at upstream-tracker `jundot/omlx#814`) | Qwen3.6-35B-A3B |
+| Q3.6-2 | Qwen3.6 | `and reasoning_content` guard on history `<think>` emission (R1 port; stacks on Q3.6-1) | **active** | upstream-tracker (HF discussion threads on Qwen3.5 publisher repos by latent-variable, applied analogously to Qwen3.6) | Qwen3.6-35B-A3B |
+| Q3.6-3 | Qwen3.6 | Auto-close unclosed `<think>` before `<tool_call>` + recognize `</thinking>` hallucination as valid close (stacks on Q3.6-2) | **active** | community-tracker (allanchan339 GH for auto-close + froggeric HF for `</thinking>` recognition; merged form by fakezeta in r/LocalLLaMA `1t4cev0` — all three **snapshotted** in `docs/sources/`) | Qwen3.6-35B-A3B |
+| Q3.6-4 | Qwen3.6 | Tool-call string-argument passthrough (R2 port; stacks on Q3.6-3) | **active** | community-tracker (barubary's Fix 9 for Qwen3.5; same pattern applied to Qwen3.6) | Qwen3.6-35B-A3B |
+| Q3.6-5 | Qwen3.6 | `<\|think_off\|>` / `<\|think_on\|>` system-message sentinels for per-request thinking-mode control (R3 port + `think_on` extension; stacks on Q3.6-4) | **opt-in** (only relevant when the runtime doesn't reliably pass `chat_template_kwargs={"enable_thinking": ...}`) | community-tracker (R3 base from u/ex-arman68 r/LocalLLaMA "definitive" thread + `<\|think_on\|>` companion from froggeric **snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-*.jinja`) | Qwen3.6-35B-A3B |
 | G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | community-ephemeral (Reddit thread) | Gemma 4 26B-A4B-it, 31B-it |
 | G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | community-tracker (asfbrz96 GitHub repo + aldegr gist; both **snapshotted** at `docs/sources/github-snapshots/asf0-...` and `docs/sources/gists/aldehir-...`) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
 | G3 | Gemma 4 | Apr 2026 official template realignment | **upstream** (Google HF + llama.cpp #21704 #21760) | publisher | Gemma 4 26B-A4B-it, 31B-it |
@@ -40,6 +46,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | G5 | Gemma 4 | LM Studio thinking-toggle `model.yaml` workaround | **active** (config-side, not a template patch) | community-ephemeral (Reddit; example yaml **snapshotted** at `docs/sources/pastebins/HDt34yA8-...yaml`) | Gemma 4 (LM Studio non-community quants) |
 | G6 | Gemma 4 | Tool-calling / system-prompt compliance grab-bag | **active** (open upstream; configuration recommendations rather than a discrete template patch) | community-ephemeral (multiple Reddit threads) | Gemma 4 26B-A4B-it primarily |
 | G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **active** | derived (bug report: upstream-tracker `Blaizzy/mlx-vlm#1033` + `#1034`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+| G8 | Gemma 4 | JSON Schema robustness in tool declarations (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type) | **opt-in** (pending upstream merge — HF disc #91) | community-tracker (HF discussion + Reddit; **snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 
 ---
 
@@ -295,6 +302,71 @@ the original P5 thread.
 
 ---
 
+### P11 — Auto-close unclosed `<think>` before `<tool_call>` (Qwen3.5)
+
+**Target:** All Qwen3.5 sizes — but only when **P7 is NOT applied**. P7
+already disables thinking entirely when tools are defined, which makes the
+unclosed-`<think>` scenario unreachable. P11 is the recovery path for
+deployments that want both thinking AND tools (i.e., they didn't apply P7).
+
+**Status: deferred.** No Qwen3.5 patched template currently ships in this
+repo (`qwen3.5` is in `tests/conftest.py:CATALOG_ONLY_FAMILIES`). Ship
+alongside the rest of the Qwen3.5 patch series.
+
+**Failure mode.** Model emits `<think>...` then a tool call without first
+closing the think block. Downstream parsers see the `<tool_call>` inside
+the unclosed think and either ignore it (no tool execution) or wrap the
+tool block in reasoning_content.
+
+**Fix.** In the assistant-render branch, if both `<think>` and `<tool_call>`
+appear in `content` and the last `</think>` precedes the last `<think>`,
+inject `</think>` before the tool-call boundary. See **Q3.6-3** for the
+shipped Qwen3.6 form (which generalizes the rfind to also handle the
+`</thinking>` hallucination case).
+
+**Prior art.** Originated by allanchan339 in `qwen3.6-enhanced.jinja`
+commit `13556c0`, 2026-05-02 (Qwen3.6 only). Not currently in any
+Qwen3.5 community template — proposed P11 is the back-port.
+
+---
+
+### P12 — Remove Python-only `|items` filter from Qwen3.5 tool-call args
+
+**Target:** All Qwen3.5 — minijinja and other C++ Jinja implementations
+that don't ship the `|items` filter.
+
+**Status: deferred.** No Qwen3.5 patched template currently ships in this
+repo. Ship alongside the rest of the Qwen3.5 patch series.
+
+**Failure mode.** Qwen3.5 upstream `templates/qwen3.5/upstream/*.jinja`
+line 120 reads:
+```jinja
+{%- for args_name, args_value in tool_call.arguments|items %}
+```
+The `|items` filter does not exist in standard Jinja (it's a Python-only
+extension exposed by some `transformers` integrations). minijinja, vLLM's
+template engine when running through certain configs, and other C++
+runtimes throw `Unknown filter: items`.
+
+**Fix.** Replace the two-variable form with a key-iteration that looks up
+the value, as done in Qwen3.6 upstream (line 123):
+```
+Old: {%- for args_name, args_value in tool_call.arguments|items %}
+New: {%- for args_name in tool_call.arguments %}
+         {%- set args_value = tool_call.arguments[args_name] %}
+```
+
+**Note.** Qwen3.6 upstream does NOT use `|items` (it already uses the
+key-iteration form), so this patch is Qwen3.5-only. froggeric's Fix #1
+("Tool Calls on C++ Engines") observes the same issue for Qwen3.5 and
+applies the same fix.
+
+**Prior art.** froggeric's `qwen3.5/chat_template.jinja` (HF
+`Qwen-Fixed-Chat-Templates`, **snapshotted** at
+`docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen35.jinja`).
+
+---
+
 ### Q3.6-1 — Qwen3.6 `preserve_thinking` default-on flip
 
 **Target:** Qwen3.6-35B-A3B (and any future Qwen3.6 sizes that ship with the
@@ -367,6 +439,305 @@ or any tool-call-parser issues.
 - *Provenance tier:* derived (bug report is community-ephemeral; the
   cross-runtime fix at `jundot/omlx#814` by latent-variable is on a
   durable upstream tracker — see "Cross-runtime status" above).
+
+---
+
+### Q3.6-2 — Qwen3.6 empty-`<think>` history guard (R1 port)
+
+**Target:** Qwen3.6-35B-A3B. **Stacks on Q3.6-1** — the patch as
+shipped diffs against the Q3.6-1-applied state, not raw upstream.
+
+**Failure mode.** Q3.6-1 flips `preserve_thinking` default-on, which
+causes the existing unconditional `<think>...</think>` wrapper in the
+history-emit branch to fire even when `reasoning_content` is empty.
+Result: `<think>\n\n</think>` empty wrappers on every history turn that
+lacks reasoning, which:
+
+- Wastes context tokens.
+- Breaks prefix-cache symmetry: the same assistant turn tokenizes
+  differently when emitted as history (with empty wrapper) vs. when it
+  was originally generated (without wrapper) — same TTFT regression
+  class as R1's Qwen3.5 fix (QwenLM/Qwen3 issue #1826).
+
+**Fix.** Add `and reasoning_content` to the existing combined guard:
+```
+Old: {%- if (preserve_thinking is not defined or preserve_thinking is not false) or (loop.index0 > ns.last_query_index) %}
+New: {%- if ((preserve_thinking is not defined or preserve_thinking is not false) or (loop.index0 > ns.last_query_index)) and reasoning_content %}
+```
+
+The new guard is conjunctive: the wrapper is emitted only if (a) the
+preserve-thinking conditions still hold AND (b) there is actual
+reasoning content to wrap. Empty history turns render naked
+(`<|im_start|>assistant\nCONTENT<|im_end|>`), byte-identical to the
+no-thinking path.
+
+**Verification fixture.** `tests/fixtures/qwen36_empty_history_reasoning.json`
+— a conversation with a history assistant turn carrying empty
+`reasoning_content`. The test harness asserts:
+
+1. The Q3.6-1-only state (synthesized in-test by applying just the
+   polarity flip to upstream) emits the empty wrapper — confirms the
+   bug exists in the intermediate state.
+2. The fully patched template (Q3.6-1 + Q3.6-2) emits exactly one
+   `<think>` (the generation prompt), with no empty `<think>\n\n</think>`
+   in history.
+
+The Q3.6-1 regression suite (`HISTORICAL_REASONING_MARKER` retained
+when present, omitted when `preserve_thinking=False`) continues to pass
+unchanged.
+
+**Relationship to Q3.6-1 (cumulative effect).**
+
+| `preserve_thinking` | Has reasoning_content | Pre-Q3.6-1 | Post-Q3.6-1 only | Post-Q3.6-1 + Q3.6-2 |
+|---|---|---|---|---|
+| undefined | yes | drop | preserve ✅ | preserve ✅ |
+| undefined | no  | drop | empty wrapper ❌ | drop ✅ |
+| `true`    | yes | preserve | preserve | preserve |
+| `true`    | no  | empty wrapper ❌ | empty wrapper ❌ | drop ✅ |
+| `false`   | yes | drop | drop | drop |
+| `false`   | no  | drop | drop | drop |
+
+Q3.6-2 closes both empty-wrapper cells.
+
+**Attribution.**
+- *Reporter:* Giant-Space-Bee (QwenLM/Qwen3 issue #1826) for the original
+  Qwen3.5 R1 failure mode (~25× TTFT regression measured); same family
+  here for Qwen3.6.
+- *Fix author:* latent-variable (HF discussion PRs against Qwen3.5
+  publisher repos), porting pattern reused here for Qwen3.6.
+- *Template author:* Alibaba Cloud / Qwen Team.
+- *Provenance tier:* upstream-tracker (HF discussions on publisher
+  repos for the Qwen3.5 origin, ported analogously).
+
+---
+
+### Q3.6-3 — Qwen3.6 auto-close `<think>` + `</thinking>` hallucination recovery
+
+**Target:** Qwen3.6-35B-A3B. **Stacks on Q3.6-1 + Q3.6-2.**
+
+**Failure modes (two related bugs, one combined fix).**
+
+1. **Unclosed `<think>` before `<tool_call>`.** Qwen3.6 sometimes emits a
+   tool call mid-reasoning without first closing the think tag. The
+   rendered assistant content looks like `<think>thinking...<tool_call>
+   ... </tool_call>` with no `</think>`. Downstream parsers either
+   ignore the tool call (it appears inside reasoning) or fold it into
+   `reasoning_content`. Result: tools never execute. Originated by
+   allanchan339 in `chat-template/qwen3.6-enhanced.jinja` (commit
+   `13556c0`, 2026-05-02).
+2. **`</thinking>` hallucination.** Qwen3.6 occasionally emits
+   `</thinking>` (with the extra "ing") instead of the canonical
+   `</think>` to close reasoning blocks. The current Qwen3.6
+   reasoning_content extractor only recognizes `</think>`, so the
+   hallucination form leaks the literal `</thinking>` token into
+   downstream rendering. Originated by froggeric in
+   `Qwen-Fixed-Chat-Templates/qwen3.6/chat_template.jinja` (initial
+   commit `e1eb965`, 2026-05-01).
+
+**Why one patch.** fakezeta's merged template (gist `9e8e039c`,
+**snapshotted** at `docs/sources/gists/fakezeta-9e8e039c-...jinja`)
+unifies both: the auto-close uses
+`max(rfind('</think>'), rfind('</thinking>'))` to detect either close
+form when deciding whether to inject, and the reasoning_content
+extractor adds an `elif '</thinking>' in content` branch that splits on
+the hallucination form. The two changes share the same target lines
+and the same conceptual normalization — keeping them in one patch
+matches how the community thinks about the fix.
+
+**Fix.** Insert at the top of the assistant-render branch (before
+`reasoning_content` extraction):
+```jinja
+{#- auto-close unclosed <think> before <tool_call>; recognize both close forms -#}
+{%- if '<tool_call>' in content and '<think>' in content %}
+    {%- set last_think = content.rfind('<think>') %}
+    {%- set last_close_think = content.rfind('</think>') %}
+    {%- set last_close_thinking = content.rfind('</thinking>') %}
+    {%- set last_close = last_close_think if last_close_think > last_close_thinking else last_close_thinking %}
+    {%- set tool_pos = content.find('<tool_call>') %}
+    {%- if last_close < last_think %}
+        {%- if tool_pos > last_think %}
+            {%- set content = content[:tool_pos] + '</think>' + content[tool_pos:] %}
+        {%- else %}
+            {%- set content = content + '</think>' %}
+        {%- endif %}
+    {%- endif %}
+{%- endif %}
+```
+And extend the existing `</think>`-split extraction with an `elif`
+branch that splits on `</thinking>`.
+
+**Verification fixture.** `tests/fixtures/qwen36_unclosed_think_before_tool_call.json`
+renders an assistant turn with `<think>...<tool_call>...</tool_call>`
+content (no `</think>`). The harness asserts:
+
+1. Upstream renders the turn with the `<think>` still unclosed when
+   `<tool_call>` appears.
+2. Patched template auto-injects `</think>` before the `<tool_call>`
+   position.
+3. An in-memory variant of the fixture replaces `</think>` with
+   `</thinking>` to verify the hallucination recovery: the literal
+   `</thinking>` token must not appear in the rendered output, and the
+   canonical `</think>` must.
+
+**Attribution.**
+- *Reporter:* fakezeta (Reddit) — r/LocalLLaMA `1t4cev0` (2026-05-04,
+  100↑) — surfaced both fixes in one merged template.
+- *Auto-close fix author:* allanchan339 (GitHub) —
+  `vLLM-Qwen3-3.5-3.6-chat-template-fix` commit `13556c0`. Verified by
+  upstream commit-timestamp diff: froggeric did not have the auto-close
+  block until commit `2179960` (2026-05-05), three days after
+  allanchan339 published it. Snapshots in
+  `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-{e1eb965,2179960}.jinja`
+  preserve the smoking gun.
+- *`</thinking>` recognition fix author:* froggeric (HuggingFace) —
+  `Qwen-Fixed-Chat-Templates/qwen3.6/chat_template.jinja` commit
+  `e1eb965`. **Snapshotted** at
+  `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-e1eb965.jinja`.
+- *Combined dual-rfind form:* fakezeta's contribution — neither parent
+  uses both close-tag rfinds in the auto-close position search.
+  **Snapshotted** at
+  `docs/sources/gists/fakezeta-9e8e039c-qwen36-merged.jinja`.
+- *Template author:* Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+- *Provenance tier:* community-tracker (allanchan339 GH + froggeric
+  HF; both durable enough to track via API).
+
+**Sibling deferred patch.** P11 (Qwen3.5 auto-close) is the catalog
+sibling for Qwen3.5 — deferred because qwen3.5 currently has no
+patched/ template. See P11 entry above.
+
+---
+
+### Q3.6-4 — Qwen3.6 tool-call string-argument passthrough (R2 port)
+
+**Target:** Qwen3.6-35B-A3B. **Stacks on Q3.6-1 + Q3.6-2 + Q3.6-3.**
+
+**Failure mode.** OpenAI-compat clients (Codex, OpenWebUI, mlx-lm
+server in some configurations) send
+`tool_calls[*].function.arguments` as a **JSON-encoded string** rather
+than the mapping form Qwen3.6's template expects. The upstream
+`is mapping` guard (line 122) silently drops the entire parameter
+body — the rendered tool call has `<function=NAME>` immediately
+followed by `</function>` with no payload. The model loses the record
+of the arguments it allegedly used; subsequent turns cannot reason
+about prior tool calls correctly.
+
+**Fix.** Add an `elif tool_call.arguments is string` branch that emits
+the trimmed string verbatim (with trailing newline) inside the
+`<function=...>` block:
+```jinja
+{%- elif tool_call.arguments is string %}
+    {%- if tool_call.arguments|trim %}
+        {{- tool_call.arguments }}
+        {{- '\n' }}
+    {%- endif %}
+{%- endif %}
+```
+
+Mapping arguments still take the original `<parameter=...>` per-key
+path. String-form arguments are emitted as a single JSON blob that
+downstream parsers can extract directly from `<function=...>` …
+`</function>` — matching how barubary's R2 fix shipped for Qwen3.5.
+
+**Why string-form happens.** OpenAI's chat completion API requires
+`arguments` to be a string. Many compatibility shims preserve that
+shape verbatim instead of round-tripping through `json.loads`. The
+template should accept either form rather than presupposing the
+upstream shim normalized them.
+
+**Verification fixture.**
+`tests/fixtures/qwen36_string_args_tool_call.json` — assistant turn
+with `tool_calls[0].function.arguments` set to a JSON string.
+Harness asserts:
+
+1. Upstream Qwen3.6 drops the string-form arguments (the marker is
+   absent from the rendered prompt).
+2. Patched template emits the string verbatim INSIDE the
+   `<tool_call>...</tool_call>` block.
+3. The mapping-args path (synthesized in-test) still emits
+   `<parameter=...>` blocks — no regression.
+
+**Attribution.**
+- *Reporter:* same family as R2 (barubary's Fix 9 for Qwen3.5).
+  Cross-confirmed for Qwen3.6 by the field reports in
+  r/LocalLLM `1sqpsut` snapshot and `ml-explore/mlx-lm#1065`.
+- *Fix author:* barubary (Qwen3.5 origin); pattern reapplied here for
+  Qwen3.6 — mechanical port. Trim guard + trailing-newline behavior
+  matches fakezeta's gist `9e8e039c` (snapshotted).
+- *Template author:* Alibaba Cloud / Qwen Team.
+- *Provenance tier:* community-tracker (barubary HF repo 401 at
+  fetch time but pattern is reproduced in multiple snapshotted
+  community templates).
+
+---
+
+### Q3.6-5 — Qwen3.6 `<|think_off|>` / `<|think_on|>` sentinels (R3 port + extension)
+
+**Target:** Qwen3.6-35B-A3B. **Stacks on Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4.**
+
+**Status: opt-in.** Only worth applying when the runtime doesn't
+reliably pass `chat_template_kwargs={"enable_thinking": ...}`. Modern
+llama.cpp (`--reasoning on/off` PR #20297) and oMLX handle this
+server-side; Q3.6-5 is for older llama.cpp builds, certain LM Studio
+configurations, or users who want a per-request escape hatch via the
+system prompt itself.
+
+**Two related sentinels.**
+
+1. **`<|think_off|>`** (R3 port from Qwen3.5): when present in the
+   merged system message, sets `enable_thinking=False`. Sentinel is
+   stripped from the rendered system block.
+2. **`<|think_on|>`** (NEW for this catalog): when present, sets
+   `enable_thinking=True`. Useful when the runtime defaults thinking
+   off and the user wants to override per-request without
+   reconfiguring the kwarg pipeline. Originated in froggeric's
+   `Qwen-Fixed-Chat-Templates/qwen3.6/chat_template.jinja` (initial
+   commit `e1eb965`, 2026-05-01).
+
+Both sentinels override any `enable_thinking` kwarg — sentinels take
+precedence as the more specific, per-request signal.
+
+**Fix.** Three coordinated changes:
+
+1. Initialize a `ns_flags = namespace(enable_thinking=none)` and seed
+   it from the kwarg if defined.
+2. After the merged system message is built, scan it for both
+   sentinels; on match, update `ns_flags.enable_thinking` and strip
+   the sentinel from `merged_system`.
+3. In the generation prompt, replace
+   `if enable_thinking is defined and enable_thinking is false` with
+   `if ns_flags.enable_thinking is false`.
+
+**Why delimited tokens.** P5's original `/no_thinking` substring sentinel
+was vulnerable to false matches in documentation excerpts, file paths,
+or quoted tool output. R3's hardening switched to Qwen's delimited
+control-token convention (`<|...|>`). Q3.6-5 follows the same shape
+with a matching companion-on form.
+
+**Verification fixture.** `tests/fixtures/qwen36_think_toggle_sentinels.json`
+— system message containing `<|think_off|>` plus surrounding text.
+Harness asserts:
+
+1. Upstream Qwen3.6 passes the sentinel through to rendered output and
+   does NOT flip thinking off.
+2. Patched template strips the sentinel AND emits the closed
+   `<think>\\n\\n</think>\\n\\n` form in the generation prompt.
+3. `<|think_on|>` overrides an explicit `enable_thinking=False` kwarg
+   (sentinel-precedence verification).
+4. Without any sentinel, the existing `enable_thinking=False` kwarg
+   path still flips thinking off correctly (regression).
+
+**Attribution.**
+- *Reporter / R3 base author:* u/ex-arman68 (Reddit) — r/LocalLLaMA
+  "The definitive Qwen 3.5 jinja template" (`1sis1vn`); proposed the
+  `<|think_off|>` delimited-token form for Qwen3.5.
+- *`<|think_on|>` companion author:* froggeric (HuggingFace) —
+  `Qwen-Fixed-Chat-Templates`. **Snapshotted** at
+  `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-e1eb965.jinja`.
+- *Combined form (sentinel-overrides-kwarg precedence):* fakezeta
+  merged template (gist `9e8e039c`, **snapshotted**).
+- *Template author:* Alibaba Cloud / Qwen Team.
+- *Provenance tier:* community-tracker (R3 base) +
+  community-tracker (froggeric for `think_on`).
 
 ---
 
@@ -481,6 +852,17 @@ template state. Recommendations rather than a discrete patch:
   your quant yet.
 - The 31B variant follows system prompts more reliably than 26B-A4B based on
   multiple community reports.
+
+**Field signal — open upstream (not template-fixable).** HF discussion
+[`google/gemma-4-26B-A4B-it/discussions/15`](https://huggingface.co/google/gemma-4-26B-A4B-it/discussions/15)
+documents a related but distinct failure mode where 26B-A4B states it
+will call a tool then doesn't actually emit one, deeper in agentic loops.
+Reproduces across multiple frontends/backends with the latest official
+chat template; Google requested a repro and one was provided. Awaiting
+publisher triage. Tracked here because it's the same family of "26B-A4B
+behaves worse than 31B at tool calling" pattern G6 collects, but is not
+addressable from the template — leave G6 itself as runtime-recommendation
+guidance.
 
 ---
 

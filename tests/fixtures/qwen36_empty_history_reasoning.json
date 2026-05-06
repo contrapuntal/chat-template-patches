@@ -1,0 +1,15 @@
+{
+  "_applies_to": ["qwen3.6"],
+  "_description": "Reproduction fixture for Q3.6-2 (Qwen3.6 empty-<think> history guard, R1 port). Conversation has a HISTORY assistant turn with empty reasoning_content. Even after Q3.6-1 (preserve_thinking default-on), the patched template still wraps that turn in '<think>\\n\\n</think>\\n\\n' — wasting context tokens and breaking prefix-cache symmetry. Q3.6-2 adds an `and reasoning_content` guard so the wrapper is only emitted when there is actual reasoning content to preserve.",
+  "_bug": "Same family as R1 (QwenLM/Qwen3 issue #1826). Specific to Qwen3.6 because Q3.6-1's polarity flip exposes the empty-reasoning case more frequently.",
+  "messages": [
+    {"role": "user", "content": "Hi"},
+    {
+      "role": "assistant",
+      "content": "Hello! How can I help you?",
+      "reasoning_content": ""
+    },
+    {"role": "user", "content": "What is 2+2?"}
+  ],
+  "add_generation_prompt": true
+}

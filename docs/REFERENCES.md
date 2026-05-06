@@ -217,7 +217,7 @@ Other relevant Qwen-publisher discussions:
 | Repo | Status |
 |---|---|
 | [`barubary/qwen3.5-barubary-attuned-chat-template`](https://huggingface.co/barubary/qwen3.5-barubary-attuned-chat-template) | **401 Unauthorized at fetch time** (gated, private, or deleted). Snapshot pending. Source for catalog entries P6, P7, P8, P9, P10, R2 |
-| [`froggeric/Qwen-Fixed-Chat-Templates`](https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates) (`qwen3.5/`, `qwen3.6/`) | Live, accessible. Companion source to allanchan339 in r/LocalLLaMA `1t4cev0`. Initial qwen3.6 upload `e1eb965` 2026-05-01 did **not** include the `<think>`-auto-close block; commit `2179960` 2026-05-05 added it (byte-equivalent to allanchan339's earlier `13556c0`). Snapshot deferred — re-fetch via `huggingface.co/api/models/froggeric/Qwen-Fixed-Chat-Templates/commits/main` if needed. Used for attribution audit on Q3.6-2 / P11. |
+| [`froggeric/Qwen-Fixed-Chat-Templates`](https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates) (`qwen3.5/`, `qwen3.6/`) | Live, accessible. Companion source to allanchan339 in r/LocalLLaMA `1t4cev0`. **Snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen35.jinja`, `-qwen36-e1eb965.jinja` (2026-05-01, no auto-close), `-qwen36-2179960.jinja` (2026-05-05, with auto-close — byte-equivalent to allanchan339's earlier `13556c0`). The `diff -u e1eb965 2179960` is the load-bearing evidence for Q3.6-3's attribution to allanchan339. |
 
 ## Pastebins (snapshotted)
 

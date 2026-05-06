@@ -1,0 +1,29 @@
+From: chat-template-patches
+Subject: [Q3.6-2] Suppress empty `<think>` wrapper on history turns (R1 port)
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (state after Q3.6-1 applied)
+
+When Q3.6-1 flips `preserve_thinking` to default-on, the existing
+unconditional `<think>...</think>` wrapper on historical assistant turns
+fires even when `reasoning_content` is empty — emitting `<think>\n\n</think>`
+on every history turn that lacks reasoning. Same prefix-cache thrashing
+class as R1 fixes for Qwen3.5 (QwenLM/Qwen3 issue #1826).
+
+Fix: add `and reasoning_content` to the existing guard so the wrapper is
+only emitted when there is actual reasoning content to preserve. Empty
+history turns render naked (`<|im_start|>assistant\nCONTENT<|im_end|>`),
+which is byte-identical to the no-thinking path and reuses prefix cache.
+
+Stacks on Q3.6-1. Diff is against the Q3.6-1-applied state.
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -100,7 +100,7 @@
+             {%- endif %}
+         {%- endif %}
+         {%- set reasoning_content = reasoning_content|trim %}
+-        {%- if (preserve_thinking is not defined or preserve_thinking is not false) or (loop.index0 > ns.last_query_index) %}
++        {%- if ((preserve_thinking is not defined or preserve_thinking is not false) or (loop.index0 > ns.last_query_index)) and reasoning_content %}
+             {{- '<|im_start|>' + message.role + '\n<think>\n' + reasoning_content + '\n</think>\n\n' + content }}
+         {%- else %}
+             {{- '<|im_start|>' + message.role + '\n' + content }}

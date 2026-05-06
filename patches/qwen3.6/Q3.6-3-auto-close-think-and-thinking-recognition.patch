@@ -1,0 +1,64 @@
+From: chat-template-patches
+Subject: [Q3.6-3] Auto-close unclosed <think> before <tool_call>; recognize </thinking> hallucination
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (state after Q3.6-1 + Q3.6-2 applied)
+
+Two related Qwen3.6 failure modes:
+
+1. **Unclosed `<think>` before `<tool_call>`.** The model emits `<think>...`
+   followed by a `<tool_call>` without first emitting `</think>`. Downstream
+   parsers see the tool call wrapped inside an unclosed reasoning block and
+   either ignore it or fold it into reasoning_content. Originated by
+   allanchan339 in `chat-template/qwen3.6-enhanced.jinja` (commit 13556c0,
+   2026-05-02).
+
+2. **`</thinking>` hallucination.** Qwen3.6 occasionally emits `</thinking>`
+   instead of the canonical `</think>` to close reasoning. The current
+   reasoning_content extractor only checks for `</think>`, so the
+   hallucination form leaks the reasoning + the literal `</thinking>` token
+   into the rendered prompt. Originated by froggeric in
+   `Qwen-Fixed-Chat-Templates/qwen3.6/chat_template.jinja` (commit e1eb965,
+   2026-05-01).
+
+Fix combines both via fakezeta's dual-rfind generalization (gist
+9e8e039c, snapshotted): the auto-close uses `max(rfind('</think>'),
+rfind('</thinking>'))` to detect either close form, and the
+reasoning_content extraction adds an `elif '</thinking>' in content`
+branch that splits on `</thinking>` instead.
+
+Stacks on Q3.6-1 + Q3.6-2. Diff is against the Q3.6-2-applied state.
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -90,6 +90,21 @@
+     {%- if message.role == "user" %}
+         {{- '<|im_start|>' + message.role + '\n' + content + '<|im_end|>' + '\n' }}
+     {%- elif message.role == "assistant" %}
++        {#- Q3.6-3: auto-close unclosed <think> before <tool_call>; recognize both </think> and </thinking> as valid closers -#}
++        {%- if '<tool_call>' in content and '<think>' in content %}
++            {%- set last_think = content.rfind('<think>') %}
++            {%- set last_close_think = content.rfind('</think>') %}
++            {%- set last_close_thinking = content.rfind('</thinking>') %}
++            {%- set last_close = last_close_think if last_close_think > last_close_thinking else last_close_thinking %}
++            {%- set tool_pos = content.find('<tool_call>') %}
++            {%- if last_close < last_think %}
++                {%- if tool_pos > last_think %}
++                    {%- set content = content[:tool_pos] + '</think>' + content[tool_pos:] %}
++                {%- else %}
++                    {%- set content = content + '</think>' %}
++                {%- endif %}
++            {%- endif %}
++        {%- endif %}
+         {%- set reasoning_content = '' %}
+         {%- if message.reasoning_content is string %}
+             {%- set reasoning_content = message.reasoning_content %}
+@@ -97,6 +112,9 @@
+             {%- if '</think>' in content %}
+                 {%- set reasoning_content = content.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}
+                 {%- set content = content.split('</think>')[-1].lstrip('\n') %}
++            {%- elif '</thinking>' in content %}
++                {%- set reasoning_content = content.split('</thinking>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}
++                {%- set content = content.split('</thinking>')[-1].lstrip('\n') %}
+             {%- endif %}
+         {%- endif %}
+         {%- set reasoning_content = reasoning_content|trim %}

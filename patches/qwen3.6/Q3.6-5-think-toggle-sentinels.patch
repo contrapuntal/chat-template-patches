@@ -1,0 +1,69 @@
+From: chat-template-patches
+Subject: [Q3.6-5] <|think_off|> / <|think_on|> system-message sentinels (R3 port + extension)
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (state after Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4 applied)
+
+Two new system-message sentinels for per-request thinking control on
+runtimes that don't reliably pass `chat_template_kwargs={"enable_thinking": ...}`:
+
+- `<|think_off|>` (R3 port from Qwen3.5): when present in the merged
+  system message, force `enable_thinking=False`. The sentinel is
+  stripped from the rendered system block.
+- `<|think_on|>` (NEW for this catalog, sourced from froggeric's
+  Qwen-Fixed-Chat-Templates): when present, force `enable_thinking=True`.
+  Useful when the runtime defaults thinking off and the user wants to
+  override per-request.
+
+Sentinel detection wins over the raw `enable_thinking` kwarg (sentinels
+take precedence). Implementation uses a namespace `ns_flags` so the
+generation-prompt block can read the post-sentinel state regardless of
+whether a kwarg was passed.
+
+This is the delimited-tag form of the sentinel, matching Qwen's own
+control-token convention. The hardened form prevents collisions with
+documentation excerpts or file paths that might mention the literal
+string `/no_thinking` (the original P5 sentinel suffered this issue).
+
+Stacks on Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4. Diff is against the
+Q3.6-4-applied state.
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -42,6 +42,11 @@
+ {%- if not messages %}
+     {{- raise_exception('No messages provided.') }}
+ {%- endif %}
++{#- Q3.6-5: thinking-toggle sentinel state. Initialized from the kwarg (if set), then overridden by `<|think_off|>` / `<|think_on|>` sentinels detected in the merged system message below. The generation-prompt block at the bottom of the template reads ns_flags.enable_thinking instead of the raw kwarg. -#}
++{%- set ns_flags = namespace(enable_thinking=none) %}
++{%- if enable_thinking is defined %}
++    {%- set ns_flags.enable_thinking = enable_thinking %}
++{%- endif %}
+ {%- set num_sys = 0 %}
+ {%- set merged_system = '' %}
+ {%- if messages[0].role == 'system' or messages[0].role == 'developer' %}
+@@ -56,6 +61,15 @@
+         {%- set num_sys = 1 %}
+     {%- endif %}
+ {%- endif %}
++{#- Q3.6-5: detect and strip thinking-toggle sentinels in the merged system message -#}
++{%- if '<|think_off|>' in merged_system %}
++    {%- set ns_flags.enable_thinking = false %}
++    {%- set merged_system = merged_system.replace('<|think_off|>', '')|trim %}
++{%- endif %}
++{%- if '<|think_on|>' in merged_system %}
++    {%- set ns_flags.enable_thinking = true %}
++    {%- set merged_system = merged_system.replace('<|think_on|>', '')|trim %}
++{%- endif %}
+ {%- if tools and tools is iterable and tools is not mapping %}
+     {{- '<|im_start|>system\n' }}
+     {{- "# Tools\n\nYou have access to the following functions:\n\n<tools>" }}
+@@ -163,7 +177,8 @@
+ {%- endfor %}
+ {%- if add_generation_prompt %}
+     {{- '<|im_start|>assistant\n' }}
+-    {%- if enable_thinking is defined and enable_thinking is false %}
++    {#- Q3.6-5: read ns_flags.enable_thinking (sentinel-aware) instead of raw kwarg -#}
++    {%- if ns_flags.enable_thinking is false %}
+         {{- '<think>\n\n</think>\n\n' }}
+     {%- else %}
+         {{- '<think>\n' }}

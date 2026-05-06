@@ -1,0 +1,37 @@
+From: chat-template-patches
+Subject: [Q3.6-4] Tool-call string-argument passthrough (R2 port)
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (state after Q3.6-1 + Q3.6-2 + Q3.6-3 applied)
+
+OpenAI-compat clients (Codex, OpenWebUI, mlx-lm server in some configs) send
+`tool_calls[*].function.arguments` as a JSON-encoded STRING rather than the
+mapping form Qwen3.6's template assumes. The upstream `is mapping` guard
+silently drops the entire parameter body — the rendered tool call has
+`<function=NAME>` immediately followed by `</function>` with no payload, so
+the model has no record of the arguments it allegedly used.
+
+Fix: add an `elif tool_call.arguments is string` branch that emits the
+trimmed string verbatim (with trailing newline). Mapping arguments still
+take the original `<parameter=...>` per-key path. Bare string-form arguments
+are emitted as a single block, which downstream parsers expecting JSON can
+parse from `<function=...>` … `</function>` directly.
+
+Sibling: R2 in the Qwen3.5 catalog (barubary's Fix 9). Cross-confirmed by
+froggeric's r/LocalLLaMA `1sdhvc5` thread and ml-explore/mlx-lm#1065.
+
+Stacks on Q3.6-1 + Q3.6-2 + Q3.6-3. Diff is against the Q3.6-3-applied state.
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -134,6 +134,11 @@
+                         {{- args_value }}
+                         {{- '\n</parameter>\n' }}
+                     {%- endfor %}
++                {%- elif tool_call.arguments is string %}
++                    {%- if tool_call.arguments|trim %}
++                        {{- tool_call.arguments }}
++                        {{- '\n' }}
++                    {%- endif %}
+                 {%- endif %}
+                 {{- '</function>\n</tool_call>' }}
+             {%- endfor %}

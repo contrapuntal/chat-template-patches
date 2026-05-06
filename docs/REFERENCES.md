@@ -23,8 +23,9 @@ ephemeral sources, see `docs/sources/README.md`.
 | [r/LocalLLaMA `1sh1bwv`](https://www.reddit.com/r/LocalLLaMA/comments/1sh1bwv/) | Gemma 4 is terrible with system prompts and tools | u/RealChaoz | Apr 2026 (124↑) | **G6** (primary thread) |
 | [r/Vllm `1skks8n`](https://www.reddit.com/r/Vllm/comments/1skks8n/) | Qwen 3.5 27B/35BA3B Tool Calling Issues: Why It Breaks & How I Fixed It | u/Expensive-Register-5 | Apr 2026 | catalog-only — vLLM-specific (R5 reference) |
 | [r/LocalLLM `1sqpsut`](https://www.reddit.com/r/LocalLLM/comments/1sqpsut/) | Qwen 3.6-35B-A3B: Reddit Asked, So I Tested If the 3.5 Tool Calling Fixes Carry Over | u/Expensive-Register-5 | Apr 2026 | **Q3.6-1** (field reports, contested signal on `preserve_thinking: true`); follow-up to 1skks8n. **Snapshotted** at `docs/sources/reddit/1sqpsut-...json` |
-| [r/LocalLLaMA `1t4cev0`](https://www.reddit.com/r/LocalLLaMA/comments/1t4cev0/) | Qwen3.6 merged chat template from allanchan339 and froggeric | u/fakezeta | May 2026 (100↑ / 0.95) | Q3.6-2 / P11 attribution context — surfaced the auto-close-`<think>`-before-`<tool_call>` fix and triggered the upstream timestamp diff that traced origination to allanchan339 (2026-05-02) rather than froggeric (added 2026-05-05). **Snapshotted** at `docs/sources/reddit/1t4cev0-...json`. Top comment (23↑) flags healthy community skepticism toward LLM-merged Jinja. |
+| [r/LocalLLaMA `1t4cev0`](https://www.reddit.com/r/LocalLLaMA/comments/1t4cev0/) | Qwen3.6 merged chat template from allanchan339 and froggeric | u/fakezeta | May 2026 (100↑ / 0.95) | **Q3.6-3** attribution context (Qwen3.6 auto-close, shipped) and **P11** (Qwen3.5 sibling, deferred) — surfaced the auto-close-`<think>`-before-`<tool_call>` fix and triggered the upstream timestamp diff that traced origination to allanchan339 (2026-05-02) rather than froggeric (added 2026-05-05). **Snapshotted** at `docs/sources/reddit/1t4cev0-...json`. Top comment (23↑) flags healthy community skepticism toward LLM-merged Jinja. |
 | [r/LocalLLaMA `1sgl3qz`](https://www.reddit.com/r/LocalLLaMA/comments/1sgl3qz/) | Gemma 4 on llama.cpp should be stable now | — | Apr 2026 | G3 stabilization context |
+| [r/LocalLLaMA `1syps6i`](https://www.reddit.com/r/LocalLLaMA/comments/1syps6i/) | I stumbled on a Gemma 4 chat template bug for tools and fixed it | u/sigjhl | May 2026 | **G8** (reporter, fix author); HF PR #91. Pastebin `tBAHN6FV` is the iterated form (superset of the HF PR). **Snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja` |
 
 ## HuggingFace discussions — Qwen publisher repos
 
@@ -55,6 +56,14 @@ Other relevant Qwen-publisher discussions:
 | [`Qwen/Qwen3.5-9B/discussions/10`](https://huggingface.co/Qwen/Qwen3.5-9B/discussions/10) | Tool call stops in middle of conversation | Same family as llama.cpp #20837 |
 | [`Qwen/Qwen3.5-9B/discussions/39`](https://huggingface.co/Qwen/Qwen3.5-9B/discussions/39) | Proposal: `enable_history_reasoning` chat-template kwarg | Functional twin of Q3.6-1 |
 | [`Qwen/Qwen3.6-35B-A3B/discussions`](https://huggingface.co/Qwen/Qwen3.6-35B-A3B/discussions) | (40+ open issues) | General reference for Q3.6 issues |
+
+## HuggingFace discussions — Gemma 4 publisher repos
+
+| Thread | Repo | Topic | Status | Supports |
+|---|---|---|---|---|
+| [`google/gemma-4-31B-it/discussions/86`](https://huggingface.co/google/gemma-4-31B-it/discussions/86) ([commit `145dc25`](https://huggingface.co/google/gemma-4-31B-it/commit/145dc2508c480a64b47242f160d286cff94a2343)) | 31B-it (also propagated to 26B-A4B / E2B / E4B) | `fix(chat_template): update SI and tool call handling` (`filter_keys`, multimodal SI content, `has_content` refactor) | **MERGED** ~2026-04-28 by RyanMullins (author: dougreid, Google) | **G7** rebase context — current `upstream/` reflects this commit |
+| [`google/gemma-4-31B-it/discussions/91`](https://huggingface.co/google/gemma-4-31B-it/discussions/91) (commit `4238b5d`) | 31B-it | JSON Schema robustness (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type/null) | Open, ready to merge (6↑, 7d old) | **G8** (publisher PR) |
+| [`google/gemma-4-26B-A4B-it/discussions/15`](https://huggingface.co/google/gemma-4-26B-A4B-it/discussions/15) | 26B-A4B-it | Tool-call generation failure in deeper agentic loops (model says it will call, doesn't) | Open, repro provided to Google | **G6** field signal (not template-fixable) |
 
 ## HuggingFace discussions — community quants
 
@@ -208,7 +217,7 @@ Other relevant Qwen-publisher discussions:
 | [`asf0/gemma4_jinja`](https://github.com/asf0/gemma4_jinja) | asfbrz96 | `docs/sources/github-snapshots/asf0-gemma4_jinja-chat_template.jinja` | **G2** |
 | [`markqvist/lc/blob/master/lc/quirks/qwen35_tool_thoughts.py`](https://github.com/markqvist/lc/blob/master/lc/quirks/qwen35_tool_thoughts.py) | markqvist | `docs/sources/github-snapshots/markqvist-lc-qwen35_tool_thoughts.py` | client-side workaround for llama.cpp #20837 |
 | [`allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix`](https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix) (`chat-template/qwen3.5-enhanced.jinja`; repo renamed from `vLLM-Qwen3.5-27B` May 2026) | u/Expensive-Register-5 | `docs/sources/github-snapshots/allanchan339-vllm-qwen35-enhanced.jinja` | R5 reference (vLLM-only) |
-| [`allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix`](https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix) (`chat-template/qwen3.6-enhanced.jinja`, commit `13556c0` 2026-05-02) | u/Expensive-Register-5 | `docs/sources/github-snapshots/allanchan339-vllm-qwen36-enhanced.jinja` | **Q3.6-2 / P11 originator** — the `<think>`-auto-close-before-`<tool_call>` block first appears here on 2026-05-02; froggeric copied the byte-equivalent block into its qwen3.6 template on 2026-05-05 (commit `2179960`). |
+| [`allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix`](https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix) (`chat-template/qwen3.6-enhanced.jinja`, commit `13556c0` 2026-05-02) | u/Expensive-Register-5 | `docs/sources/github-snapshots/allanchan339-vllm-qwen36-enhanced.jinja` | **Q3.6-3 originator** (Qwen3.6 shipped) + **P11 prior art** (Qwen3.5 sibling, deferred) — the `<think>`-auto-close-before-`<tool_call>` block first appears here on 2026-05-02; froggeric copied the byte-equivalent block into its qwen3.6 template on 2026-05-05 (commit `2179960`). |
 | [`allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix`](https://github.com/allanchan339/vLLM-Qwen3-3.5-3.6-chat-template-fix) (`README.md`) | u/Expensive-Register-5 | `docs/sources/github-snapshots/allanchan339-vllm-qwen36-README.md` | Documents the seven failure modes the template addresses + vLLM/parser configuration recommendations. |
 | [`Addy-ad/AIstuff/tree/main/lms`](https://github.com/Addy-ad/AIstuff/tree/main/lms) | u/Addyad | not snapshotted (batch script, not a template) | LM Studio model.yaml batch generator |
 
@@ -235,7 +244,7 @@ Other relevant Qwen-publisher discussions:
 | [`gist.github.com/aldehir/de036c259ecfe2571b9f1e573f9340e7`](https://gist.github.com/aldehir/de036c259ecfe2571b9f1e573f9340e7) | aldegr (GH `aldehir`) | `docs/sources/gists/aldehir-de036c259-gemma4-open-webui.jinja` | **G2** alt fix; cross-referenced from llama.cpp PR #21760 |
 | [`gist.github.com/sudoingX/c2facf7d8f7608c65c1024ef3b22d431`](https://gist.github.com/sudoingX/c2facf7d8f7608c65c1024ef3b22d431) | sudoingX | `docs/sources/gists/sudoingX-c2facf7d-qwen35-27b-fixed.jinja` | parallel rediscovery of P10 + R1 |
 | [`gist.github.com/lekoOwO/c6aed944a636abccfe2c3912be34b904`](https://gist.github.com/lekoOwO/c6aed944a636abccfe2c3912be34b904) | lekoOwO | `docs/sources/gists/lekoOwO-c6aed944-qwen35-fork.jinja` | fork of sudoingX |
-| [`gist.github.com/fakezeta/9e8e039c60332fcb143c6e805558afe0`](https://gist.github.com/fakezeta/9e8e039c60332fcb143c6e805558afe0) | fakezeta | `docs/sources/gists/fakezeta-9e8e039c-qwen36-merged.jinja` | Q3.6-2 / P11 attribution context — derivative LLM-assisted merge of allanchan339 + froggeric Qwen3.6 templates; also adds a `</thinking>` rfind branch in the auto-close block that neither parent has. |
+| [`gist.github.com/fakezeta/9e8e039c60332fcb143c6e805558afe0`](https://gist.github.com/fakezeta/9e8e039c60332fcb143c6e805558afe0) | fakezeta | `docs/sources/gists/fakezeta-9e8e039c-qwen36-merged.jinja` | **Q3.6-3** attribution context (Qwen3.6 shipped) and **P11** (Qwen3.5 sibling, deferred) — derivative LLM-assisted merge of allanchan339 + froggeric Qwen3.6 templates; also adds a `</thinking>` rfind branch in the auto-close block that neither parent has. |
 
 ## Standards / external docs
 

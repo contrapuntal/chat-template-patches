@@ -1031,3 +1031,81 @@ def test_q36_7_patch_applied_in_memory_adds_bullets_and_renders(template_pairs) 
             f"Q3.6-7 applied in-memory but bullet {bullet!r} is missing from "
             f"the rendered output. Output:\n{out!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-8 — tool-error escalation counter (WATCH / promotion-gate eval)
+# ---------------------------------------------------------------------------
+
+# Q3.6-8 is watch-listed and NOT implemented. This scaffold encodes the
+# promotion gate from docs/evals/Q3.6-8-error-escalation.md and self-activates:
+# it SKIPS while no qwen3.6 patched template implements the counter
+# (`consecutive_failures`), and runs the full true-positive / false-positive
+# matrix the moment a candidate does. The candidate must emit the fixture's
+# `_escalation_signal` wherever it injects a correction directive.
+
+Q36_8_IMPL_MARKER = "consecutive_failures"
+
+
+def _q36_8_candidate_or_skip(template_pairs):
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("qwen3.6 patched template not present")
+    if Q36_8_IMPL_MARKER not in pair.patched.read_text():
+        pytest.skip(
+            "Q3.6-8 not implemented (no `consecutive_failures` counter in the "
+            "patched template). Eval scaffold ready — see "
+            "docs/evals/Q3.6-8-error-escalation.md"
+        )
+    return pair
+
+
+def test_q36_8_eval_fixture_is_well_formed() -> None:
+    """Always-on guard: the eval fixture stays loadable and keeps its
+    true-positive AND false-positive cases (the FP cases are the hard gate —
+    losing them would silently weaken the eval)."""
+    fx = load_fixture("qwen36_repeated_tool_failures")
+    cases = {c["name"]: c for c in fx["_eval_cases"]}
+    assert fx.get("_escalation_signal"), "fixture lost its _escalation_signal"
+    tiers = {c["name"]: c["expect_tier"] for c in fx["_eval_cases"]}
+    assert any(t == 2 for t in tiers.values()), "no tier-2 (consecutive) TP case"
+    assert any(t == 1 for t in tiers.values()), "no tier-1 (first-failure) TP case"
+    fp = [n for n, t in tiers.items() if t == 0]
+    assert len(fp) >= 3, (
+        f"eval weakened: expected >=3 false-positive bait cases, found {fp}"
+    )
+
+
+@pytest.mark.parametrize(
+    "case_name",
+    [
+        "tp_two_consecutive_genuine_failures",
+        "tp_first_failure_only",
+        "reset_after_success",
+        "fp_legitimate_error_count_data",
+        "fp_identifier_and_path",
+        "fp_negated_keyword",
+    ],
+)
+def test_q36_8_eval_matrix(template_pairs, case_name: str) -> None:
+    """Promotion gate (self-activating). For a candidate Q3.6-8 template:
+    the escalation signal must be PRESENT for true-positive cases (tier >= 1)
+    and ABSENT for the false-positive bait (tier 0)."""
+    pair = _q36_8_candidate_or_skip(template_pairs)
+    fx = load_fixture("qwen36_repeated_tool_failures")
+    signal = fx["_escalation_signal"]
+    case = next(c for c in fx["_eval_cases"] if c["name"] == case_name)
+    payload = {"messages": case["messages"], "add_generation_prompt": True}
+    out = render(pair.patched, payload)
+    present = signal in out
+    if case["expect_tier"] == 0:
+        assert not present, (
+            f"Q3.6-8 FALSE POSITIVE on {case_name}: a correction directive "
+            f"fired on a non-failure. {case['why']}\nOutput:\n{out!r}"
+        )
+    else:
+        assert present, (
+            f"Q3.6-8 missed a genuine failure on {case_name} "
+            f"(expected tier {case['expect_tier']}). {case['why']}\n"
+            f"Output:\n{out!r}"
+        )

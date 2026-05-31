@@ -76,6 +76,10 @@
     {{- "# Tools\n\nYou have access to the following functions:\n\n<tools>" }}
     {%- for tool in tools %}
         {{- "\n" }}
+        {#- Q3.6-6: unwrap the OpenAI tool-definition envelope ({"type":"function","function":{...}}) to the inner function spec. Shape-strict — requires type=="function" AND a mapping `function` — so a tool that merely carries a top-level `function` key (or is not a mapping) is left untouched. Analogous to the looser unwrap this template does at the tool-CALL site. -#}
+        {%- if tool is mapping and tool.type is defined and tool.type == 'function' and tool.function is mapping %}
+            {%- set tool = tool.function %}
+        {%- endif %}
         {{- tool | tojson }}
     {%- endfor %}
     {{- "\n</tools>" }}

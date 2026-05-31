@@ -1,0 +1,56 @@
+From: chat-template-patches
+Subject: [Q3.6-6] Unwrap OpenAI tool-definition envelope to inner function spec
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (state after Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4 + Q3.6-5 applied)
+
+Harnesses speaking the OpenAI tool protocol send tool *definitions* wrapped
+in an envelope: `{"type": "function", "function": {"name": ..., "parameters":
+...}}`. Qwen3.6's upstream `<tools>` loop emits the whole wrapper via
+`tool | tojson`, so the model sees an extra `type`/`function` layer it has to
+peel off mentally, and the envelope keys cost tokens on every tool.
+
+Fix: before serializing each tool, unwrap the envelope to its inner function
+spec when the full envelope shape is present:
+
+    {%- if tool is mapping and tool.type is defined and tool.type == 'function' and tool.function is mapping %}
+        {%- set tool = tool.function %}
+    {%- endif %}
+
+Shape-strict on purpose. The guard requires BOTH `type == "function"` AND a
+mapping `function` member — not merely `tool.function is defined`. A tool that
+happens to carry an unrelated top-level key named `function` (or a tool that
+isn't a mapping at all) does NOT match the envelope shape and is emitted
+unchanged. This is stricter than:
+
+  - the gist this patch derives from (jscott3201 gist
+    e4b155885cc68c038d6ac8909a3bd9fe, patch "Q5"), which guards only on
+    `tool.function is defined` behind an `unwrap_tool_envelope` kwarg; and
+  - the looser `tool_call.function is defined` unwrap this same template
+    already does at the tool-CALL site (lines 110-112 upstream).
+
+We intentionally dropped the gist's `unwrap_tool_envelope` kwarg escape hatch:
+with a shape-strict guard the change is a no-op for anything that is not an
+actual OpenAI envelope, so a per-request opt-out is unnecessary. (See
+adversarial review note in docs/PATCH-CATALOG.md § Q3.6-6.)
+
+Prior art: the unwrap convention is canonical in Qwen's own newer coder
+template (Qwen/Qwen3-Coder-Next/chat_template.jinja, `tool.function` unwrap).
+Independently surfaced for Qwen3.6 by the jscott3201 gist, snapshotted at
+docs/sources/gists/jscott3201-e4b15588-qwen36-custom.jinja.
+
+Stacks on Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4 + Q3.6-5. Diff is against the
+Q3.6-5-applied state.
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -76,6 +76,10 @@
+     {{- "# Tools\n\nYou have access to the following functions:\n\n<tools>" }}
+     {%- for tool in tools %}
+         {{- "\n" }}
++        {#- Q3.6-6: unwrap the OpenAI tool-definition envelope ({"type":"function","function":{...}}) to the inner function spec. Shape-strict — requires type=="function" AND a mapping `function` — so a tool that merely carries a top-level `function` key (or is not a mapping) is left untouched. Analogous to the looser unwrap this template does at the tool-CALL site. -#}
++        {%- if tool is mapping and tool.type is defined and tool.type == 'function' and tool.function is mapping %}
++            {%- set tool = tool.function %}
++        {%- endif %}
+         {{- tool | tojson }}
+     {%- endfor %}
+     {{- "\n</tools>" }}

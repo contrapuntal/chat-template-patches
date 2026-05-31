@@ -30,6 +30,7 @@ import pytest
 from conftest import (
     CATALOG_ONLY_FAMILIES,
     DECLARED_FAMILIES,
+    REPO_ROOT,
     TemplatePair,
     fixture_applies_to,
     load_fixture,
@@ -730,3 +731,219 @@ def test_q36_5_kwarg_path_still_works_without_sentinel(template_pairs) -> None:
         "Q3.6-5 regression — enable_thinking=False kwarg no longer flips "
         f"thinking off. Got:\n{gen!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-6 — Qwen3.6 tool-definition envelope unwrap
+# ---------------------------------------------------------------------------
+
+
+def _tools_block(out: str) -> str:
+    """Return the `<tools>` … `</tools>` region of the rendered system
+    prompt, where tool definitions are serialized."""
+    start = out.find("<tools>")
+    end = out.find("</tools>", start)
+    if start < 0 or end < 0:
+        return ""
+    return out[start : end + len("</tools>")]
+
+
+def test_q36_6_upstream_keeps_tool_envelope(template_pairs) -> None:
+    """Confirm the failure mode: upstream Qwen3.6 serializes the whole
+    OpenAI tool-definition envelope, so the `"function":` wrapper key
+    appears inside the rendered <tools> block."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    fixture = load_fixture("qwen36_tool_envelope_wrap")
+    out = render(pair.upstream, fixture)
+    block = _tools_block(out)
+    assert "ENVELOPE_DESC_MARKER" in block, (
+        "fixture didn't render the tool definition at all — fixture or "
+        f"template shape changed; review test. <tools> block:\n{block!r}"
+    )
+    assert '"function":' in block, (
+        "upstream Qwen3.6 unexpectedly dropped the OpenAI envelope wrapper "
+        '("function": key absent) — Q3.6-6 may already be present upstream; '
+        f"update catalog status. <tools> block:\n{block!r}"
+    )
+
+
+def test_q36_6_patched_unwraps_tool_envelope(template_pairs) -> None:
+    """With Q3.6-6 applied, the envelope is unwrapped to the inner function
+    spec: the `"function":` wrapper key is gone, the inner spec (name,
+    description) is emitted at top level."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    fixture = load_fixture("qwen36_tool_envelope_wrap")
+    out = render(pair.patched, fixture)
+    block = _tools_block(out)
+    assert "ENVELOPE_DESC_MARKER" in block, (
+        f"Q3.6-6 dropped the tool definition entirely. <tools> block:\n{block!r}"
+    )
+    assert '"function":' not in block, (
+        "Q3.6-6 broken — the `\"function\":` envelope wrapper key is still "
+        f"present; the tool definition was not unwrapped. <tools> block:\n{block!r}"
+    )
+    assert '"name": "get_weather"' in block, (
+        "Q3.6-6 broken — inner function spec not emitted at top level. "
+        f"<tools> block:\n{block!r}"
+    )
+
+
+def test_q36_6_patched_passes_through_unwrapped_tool(template_pairs) -> None:
+    """Regression: a tool sent WITHOUT the envelope (bare function spec,
+    no `.function` attribute) must render unchanged — the unwrap guard is
+    a no-op for it."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    base = load_fixture("qwen36_tool_envelope_wrap")
+    bare_variant = {
+        **base,
+        "tools": [base["tools"][0]["function"]],  # strip the envelope
+    }
+    out = render(pair.patched, bare_variant)
+    block = _tools_block(out)
+    assert "ENVELOPE_DESC_MARKER" in block and '"name": "get_weather"' in block, (
+        f"Q3.6-6 mangled a bare (already-unwrapped) tool definition. "
+        f"<tools> block:\n{block!r}"
+    )
+
+
+def test_q36_6_patched_does_not_unwrap_toplevel_function_key(template_pairs) -> None:
+    """Adversarial (Codex review): a tool that is NOT an OpenAI envelope but
+    happens to carry an unrelated top-level `function` key must NOT be
+    unwrapped. The shape-strict guard requires `type == "function"` AND a
+    mapping `function`; this tool has neither `type == "function"` nor a
+    mapping `function`, so the whole definition must survive verbatim.
+
+    A loose `tool.function is defined` guard (the gist's form) would rewrite
+    `tool` to the string value and silently drop the tool's name/params."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    base = load_fixture("qwen36_tool_envelope_wrap")
+    collision_variant = {
+        **base,
+        "tools": [
+            {
+                "name": "weird_tool",
+                "description": "TOPLEVEL_FUNCTION_KEY_MARKER",
+                "function": "this_string_must_not_replace_the_tool",
+                "parameters": {"type": "object", "properties": {}},
+            }
+        ],
+    }
+    out = render(pair.patched, collision_variant)
+    block = _tools_block(out)
+    assert '"name": "weird_tool"' in block, (
+        "Q3.6-6 over-unwrapped a non-envelope tool that merely has a "
+        f"top-level `function` key — the tool name was lost. <tools>:\n{block!r}"
+    )
+    assert "TOPLEVEL_FUNCTION_KEY_MARKER" in block, (
+        f"Q3.6-6 dropped the non-envelope tool's body. <tools>:\n{block!r}"
+    )
+
+
+def test_q36_6_patched_handles_non_mapping_tool(template_pairs) -> None:
+    """Defensive (Codex review): if a `tools` entry is not a mapping, the
+    `tool is mapping` guard must short-circuit so `tool.type` / `tool.function`
+    are never evaluated against a non-mapping. The entry should render via
+    `tojson` without raising."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    base = load_fixture("qwen36_tool_envelope_wrap")
+    non_mapping_variant = {**base, "tools": ["NON_MAPPING_TOOL_MARKER"]}
+    out = render(pair.patched, non_mapping_variant)  # must not raise
+    assert "NON_MAPPING_TOOL_MARKER" in out, (
+        f"Q3.6-6 mishandled a non-mapping tool entry. Output:\n{out!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-7 — Qwen3.6 strengthened <IMPORTANT> tool instructions (OPT-IN)
+# ---------------------------------------------------------------------------
+
+# Q3.6-7 is opt-in: the .patch ships but is NOT applied to patched/35B-A3B.jinja
+# (it edits in-prompt instruction text, not render-level behavior — same
+# treatment as Gemma 4's G8/G6). These tests pin (a) that the shipped template
+# does NOT carry it, and (b) that the patch file, applied in-memory, injects the
+# three new bullets and the template still renders.
+
+Q36_7_PATCH = (
+    REPO_ROOT / "patches" / "qwen3.6" / "Q3.6-7-strengthened-tool-instructions.patch"
+)
+
+Q36_7_NEW_BULLETS = (
+    "Do NOT omit the opening <tool_call> tag",
+    "with NO leading spaces or indentation",
+    "Do NOT nest <tool_call> blocks inside one another",
+)
+
+
+def test_q36_7_not_applied_to_shipped_patched_template(template_pairs) -> None:
+    """Opt-in invariant: the default patched/35B-A3B.jinja must NOT contain
+    the Q3.6-7 bullets. If this fails, Q3.6-7 leaked into the active stack —
+    either intentional (then promote it in the catalog and delete this test)
+    or accidental (then revert)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    src = pair.patched.read_text()
+    for bullet in Q36_7_NEW_BULLETS:
+        assert bullet not in src, (
+            f"Q3.6-7 bullet {bullet!r} found in the shipped patched template, "
+            "but Q3.6-7 is documented as opt-in (not applied)."
+        )
+
+
+def test_q36_7_patch_applied_in_memory_adds_bullets_and_renders(template_pairs) -> None:
+    """Apply the Q3.6-7 patch's single-line replacement in-memory against the
+    shipped (Q3.6-6) patched template, then render with a tools fixture and
+    assert: the three new bullets appear, and the template still renders
+    without raising (no Jinja syntax breakage)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    assert Q36_7_PATCH.is_file(), f"Q3.6-7 patch missing at {Q36_7_PATCH}"
+
+    patch_lines = Q36_7_PATCH.read_text().splitlines()
+    # The patch changes exactly one content line: extract the old (`-`) and
+    # new (`+`) forms of the `{{- '...IMPORTANT...' }}` instruction line.
+    old_line = next(
+        l[1:] for l in patch_lines if l.startswith("-") and "<IMPORTANT>" in l
+    )
+    new_line = next(
+        l[1:] for l in patch_lines if l.startswith("+") and "<IMPORTANT>" in l
+    )
+
+    src = pair.patched.read_text()
+    assert old_line in src, (
+        "Q3.6-7 patch's `-` line does not match the shipped patched template — "
+        "the patch is stale relative to patched/35B-A3B.jinja. Regenerate it."
+    )
+    applied = src.replace(old_line, new_line)
+    assert applied != src
+
+    import jinja2  # noqa: F401  (kept local; matches Q3.6-2 synthetic test)
+    from conftest import make_env
+
+    env = make_env()
+    template = env.from_string(applied)
+    fixture = load_fixture("qwen36_tool_envelope_wrap")
+    ctx = {
+        "bos_token": "",
+        "eos_token": "",
+        "pad_token": "",
+        "add_generation_prompt": True,
+        "add_vision_id": False,
+        "tools": None,
+    }
+    ctx.update(fixture)
+    out = template.render(**ctx)
+    for bullet in Q36_7_NEW_BULLETS:
+        assert bullet in out, (
+            f"Q3.6-7 applied in-memory but bullet {bullet!r} is missing from "
+            f"the rendered output. Output:\n{out!r}"
+        )

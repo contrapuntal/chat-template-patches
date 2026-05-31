@@ -39,6 +39,8 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | Q3.6-3 | Qwen3.6 | Auto-close unclosed `<think>` before `<tool_call>` + recognize `</thinking>` hallucination as valid close (stacks on Q3.6-2) | **active** | community-tracker (allanchan339 GH for auto-close + froggeric HF for `</thinking>` recognition; merged form by fakezeta in r/LocalLLaMA `1t4cev0` — all three **snapshotted** in `docs/sources/`) | Qwen3.6-35B-A3B |
 | Q3.6-4 | Qwen3.6 | Tool-call string-argument passthrough (R2 port; stacks on Q3.6-3) | **active** | community-tracker (barubary's Fix 9 for Qwen3.5; same pattern applied to Qwen3.6) | Qwen3.6-35B-A3B |
 | Q3.6-5 | Qwen3.6 | `<\|think_off\|>` / `<\|think_on\|>` system-message sentinels for per-request thinking-mode control (R3 port + `think_on` extension; stacks on Q3.6-4) | **opt-in** (only relevant when the runtime doesn't reliably pass `chat_template_kwargs={"enable_thinking": ...}`) | community-tracker (R3 base from u/ex-arman68 r/LocalLLaMA "definitive" thread + `<\|think_on\|>` companion from froggeric **snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-*.jinja`) | Qwen3.6-35B-A3B |
+| Q3.6-6 | Qwen3.6 | Unwrap OpenAI tool-**definition** envelope (`{"type":"function","function":{...}}`) to the inner function spec at the `<tools>` site (stacks on Q3.6-5) | **active** | derived (mirrors the unwrap the same template already does at the tool-**call** site; prior art: jscott3201 gist **snapshotted** + Qwen3-Coder-Next publisher convention) | Qwen3.6-35B-A3B |
+| Q3.6-7 | Qwen3.6 | Strengthened `<IMPORTANT>` tool-call instructions (+3 bullets: don't-omit-`<tool_call>`, no-indentation, no-nesting) | **opt-in** (in-prompt instruction text, not render-verifiable; ships a `.patch` but is **not** in the default `patched/` set) | community-tracker (jscott3201 gist **snapshotted**; cites QwenLM/Qwen3-Coder#475 + block/goose#6883) | Qwen3.6-35B-A3B |
 | G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | community-ephemeral (Reddit thread) | Gemma 4 26B-A4B-it, 31B-it |
 | G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | community-tracker (asfbrz96 GitHub repo + aldegr gist; both **snapshotted** at `docs/sources/github-snapshots/asf0-...` and `docs/sources/gists/aldehir-...`) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
 | G3 | Gemma 4 | Apr 2026 official template realignment | **upstream** (Google HF + llama.cpp #21704 #21760) | publisher | Gemma 4 26B-A4B-it, 31B-it |
@@ -799,6 +801,171 @@ Harness asserts:
 - *Template author:* Alibaba Cloud / Qwen Team.
 - *Provenance tier:* community-tracker (R3 base) +
   community-tracker (froggeric for `think_on`).
+
+---
+
+### Q3.6-6 — Qwen3.6 tool-definition envelope unwrap
+
+**Target:** Qwen3.6-35B-A3B. **Stacks on Q3.6-1 … Q3.6-5.**
+
+**Failure mode.** Harnesses speaking the OpenAI tool protocol send tool
+*definitions* wrapped in an envelope:
+`{"type": "function", "function": {"name": ..., "parameters": ...}}`.
+Qwen3.6's `<tools>` loop (upstream line 63 / patched line 79) emits the
+whole wrapper via `tool | tojson`:
+```jinja
+{%- for tool in tools %}
+    {{- "\n" }}
+    {{- tool | tojson }}
+{%- endfor %}
+```
+The model therefore sees an extra `type`/`function` layer it must peel off,
+and the envelope keys cost tokens on every tool declaration.
+
+**Fix.** Unwrap the envelope to its inner function spec when the full
+envelope **shape** is present:
+```jinja
+{%- if tool is mapping and tool.type is defined and tool.type == 'function' and tool.function is mapping %}
+    {%- set tool = tool.function %}
+{%- endif %}
+{{- tool | tojson }}
+```
+
+**Shape-strict guard (adversarial-review fix, 2026-05-30).** The guard
+requires BOTH `type == "function"` AND a mapping `function` member — not
+merely `tool.function is defined`. The initial form used the loose
+`tool.function is defined`, which Codex flagged: a tool object that carries
+an *unrelated* top-level key named `function` (or a tool that isn't a mapping
+at all) would be silently rewritten to that member, dropping the tool's real
+name/parameters. The shape check makes the unwrap fire **only** on an actual
+OpenAI envelope. Regressions covered by
+`test_q36_6_patched_does_not_unwrap_toplevel_function_key` and
+`test_q36_6_patched_handles_non_mapping_tool`.
+
+**Why this is `derived`, not an external port.** The template *already*
+performs an analogous unwrap at the tool-**call** site — both upstream
+(lines 110-112) and patched do
+`{%- if tool_call.function is defined %}{%- set tool_call = tool_call.function %}`.
+Q3.6-6 makes the tool-**definition** rendering symmetric with the
+tool-**call** rendering that ships in the same file (and is in fact *stricter*
+than the call-site idiom, which uses the loose `is defined` form). The idiom
+is in-tree, not imported. With the shape-strict guard, anything that is not an
+actual envelope renders unchanged.
+
+**Why the gist's `unwrap_tool_envelope` kwarg was dropped (deliberate).**
+jscott3201 gates the unwrap behind `unwrap_tool_envelope` (default true) so it
+can be turned off per request. We drop that escape hatch on purpose: a
+shape-strict guard is already a no-op for anything that isn't an OpenAI
+envelope, so there is no legitimate input for which the wrapped form is
+intended yet the unwrap would still fire. A per-request opt-out would only
+matter if some deployment *wanted* the redundant `type`/`function` layer fed
+to the model, which contradicts the publisher (Qwen3-Coder-Next) convention
+this patch follows. Flagged and accepted during Codex adversarial review.
+
+**Prior art / corroboration.** The unwrap convention is canonical in Qwen's
+own newer coder template (`Qwen/Qwen3-Coder-Next/chat_template.jinja`, which
+does `{%- if tool.function is defined %}{%- set tool = tool.function %}`).
+Independently surfaced for Qwen3.6 by jscott3201's public fork (gist
+`e4b155885cc68c038d6ac8909a3bd9fe`, its patch "Q5"), **snapshotted** at
+`docs/sources/gists/jscott3201-e4b15588-qwen36-custom.jinja`.
+
+**Note on the gist's form.** Besides the tool-definition unwrap, the gist also
+unwraps at the tool-call site — redundant here, because Qwen3.6 upstream
+already does that (lines 110-112). So Q3.6-6 ports only the definition-site
+half of the gist's "Q5".
+
+**Verification fixture.** `tests/fixtures/qwen36_tool_envelope_wrap.json` — a
+`tools` list with an envelope-wrapped definition. The harness asserts:
+
+1. Upstream renders the `"function":` wrapper key inside `<tools>` (envelope
+   present).
+2. Patched renders no `"function":` wrapper and emits the inner spec
+   (`"name": "get_weather"`) at top level.
+3. A bare (already-unwrapped) tool still renders correctly — the guard is a
+   no-op (`test_q36_6_patched_passes_through_unwrapped_tool`).
+4. A non-envelope tool with an unrelated top-level `function` key is NOT
+   unwrapped — name/body survive
+   (`test_q36_6_patched_does_not_unwrap_toplevel_function_key`).
+5. A non-mapping `tools` entry renders without raising
+   (`test_q36_6_patched_handles_non_mapping_tool`).
+
+**Attribution.**
+- *Reporter / surfacer (Qwen3.6):* jscott3201 (GitHub gist).
+- *Convention author:* Alibaba Cloud / Qwen Team (the `tool.function` unwrap
+  is canonical in Qwen3-Coder-Next).
+- *Fix author:* original to this repo — mechanical mirror of the template's
+  own tool-call-site unwrap.
+- *Template author:* Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+- *Provenance tier:* derived (in-tree idiom; community-tracker + publisher
+  corroboration).
+
+---
+
+### Q3.6-7 — Qwen3.6 strengthened `<IMPORTANT>` tool-call instructions
+
+**Target:** Qwen3.6-35B-A3B. **Stacks on Q3.6-1 … Q3.6-6.**
+
+**Status: opt-in.** Q3.6-7 edits the in-prompt instruction *text* rather than
+fixing a render-level bug, so its effect cannot be verified by a render-diff
+the way the active Q3.6-N patches are. The reference patch ships in
+`patches/qwen3.6/Q3.6-7-strengthened-tool-instructions.patch` and is **not**
+applied to the default `patched/35B-A3B.jinja`. Same treatment as Gemma 4's
+G8 (opt-in) and the guidance-only G6. Apply it if you observe the documented
+tool-call formatting failures.
+
+**Promotion gate: needs eval before going active.** Do not promote Q3.6-7 to
+the default `patched/` stack without a measured tool-call-accuracy eval
+(before/after on the documented failure modes). Until that evidence exists it
+stays opt-in by policy, not just by default — this guards against the entry
+silently accreting into the active set as untestable instruction-text.
+
+**Failure modes addressed.** Upstream's `<IMPORTANT>` reminder has four
+bullets. Q3.6-7 adds three that target documented, reproducible Qwen-coder
+tool-call formatting failures:
+
+- **Omitted opening `<tool_call>` tag** — the model emits `<function=...>`
+  without the wrapping `<tool_call>`. QwenLM/Qwen3-Coder#475.
+- **Indented tool calls** — `<tool_call>` / `<function>` with leading
+  whitespace miss XML/PEG parsers that anchor on line start. block/goose#6883.
+- **Nested `<tool_call>` blocks** — for parallel calls the model nests
+  blocks instead of emitting separate closed ones. block/goose#6883 +
+  parallel-call nesting reports.
+
+**Fix.** Replace the 4-bullet `<IMPORTANT>` string with a 7-bullet version
+(existing four retained, terminal punctuation normalized). Purely additive
+guidance to the model; the tool-call wire format for well-formed output is
+unchanged.
+
+**Why opt-in and not active.** Instruction-text changes are not falsifiable by
+the render harness — we can assert the bullets are *present*, not that they
+*reduce error rates*. Promoting Q3.6-7 to active would require a measured
+tool-call-accuracy eval, which is out of scope for a render-diff suite. This
+mirrors how G6 (Gemma 4 grab-bag) is documented as guidance rather than a
+discrete patch.
+
+**Verification.** Two tests pin the opt-in contract without claiming an
+efficacy result:
+- `test_q36_7_not_applied_to_shipped_patched_template` — the default
+  `patched/` must NOT contain the new bullets (guards against accidental
+  promotion).
+- `test_q36_7_patch_applied_in_memory_adds_bullets_and_renders` — applies the
+  patch's single-line replacement in-memory and asserts the three bullets
+  appear and the template still renders (no Jinja breakage).
+
+**Note on the gist's form.** jscott3201 gates the strengthened block behind a
+`verbose_tool_instructions` kwarg (default true). This repo ships it as a flat
+opt-in patch (apply = enable) rather than adding a kwarg gate, consistent with
+how G8 ships.
+
+**Attribution.**
+- *Reporter / fix author:* jscott3201 (GitHub gist
+  `e4b155885cc68c038d6ac8909a3bd9fe`, its patch "Q6"). **Snapshotted** at
+  `docs/sources/gists/jscott3201-e4b15588-qwen36-custom.jinja`.
+- *Cited failure-mode sources:* QwenLM/Qwen3-Coder#475 (omitted tag),
+  block/goose#6883 (indentation + nesting).
+- *Template author:* Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+- *Provenance tier:* community-tracker (gist; cited bugs on durable GitHub
+  trackers).
 
 ---
 

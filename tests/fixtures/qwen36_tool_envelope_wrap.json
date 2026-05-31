@@ -1,0 +1,25 @@
+{
+  "_applies_to": ["qwen3.6"],
+  "_description": "Reproduction fixture for Q3.6-6 (tool-definition envelope unwrap). The `tools` list carries a definition wrapped in the OpenAI envelope `{\"type\": \"function\", \"function\": {...}}`. Upstream Qwen3.6 emits the whole envelope via `tool | tojson`, so the `\"function\":` wrapper key appears in the rendered <tools> block. With Q3.6-6, the envelope is unwrapped to the inner function spec (mirroring the tool-CALL-site unwrap already in the template), so the wrapper key is gone and the inner spec is emitted at top level.",
+  "_bug": "Upstream <tools> loop does `tool | tojson` with no unwrap, unlike the tool-CALL site which already unwraps `tool_call.function`. Prior art: jscott3201 gist e4b15588 (patch Q5); convention from Qwen/Qwen3-Coder-Next.",
+  "messages": [
+    {"role": "user", "content": "What's the weather in SF?"}
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "ENVELOPE_DESC_MARKER",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {"type": "string", "description": "City name"}
+          },
+          "required": ["city"]
+        }
+      }
+    }
+  ],
+  "add_generation_prompt": true
+}

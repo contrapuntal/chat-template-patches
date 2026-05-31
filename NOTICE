@@ -197,6 +197,20 @@ Patch Q3.6-5 — Qwen3.6 <|think_off|> / <|think_on|> sentinels
                       Q3.6-5 is for older runtimes or per-request
                       control via the system prompt itself.
 
+Patch Q3.6-6 — Qwen3.6 tool-definition envelope unwrap
+  Reporter        : jscott3201 (GitHub gist
+                    e4b155885cc68c038d6ac8909a3bd9fe, its patch "Q5") —
+                    surfaced the unwrap for Qwen3.6. Snapshotted at
+                    docs/sources/gists/jscott3201-e4b15588-qwen36-custom.jinja.
+  Convention      : Alibaba Cloud / Qwen Team — the `tool.function`
+                    definition unwrap is canonical in Qwen's own
+                    Qwen3-Coder-Next chat template.
+  Fix author      : original to this repo — mechanical mirror of the
+                    unwrap this same template already performs at the
+                    tool-CALL site (tool_call.function).
+  Template author : Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+  Stacks on       : Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4 + Q3.6-5.
+
 ----------------------------------------------------------------------
 Catalog-only patches (prior art and reporter attribution)
 ----------------------------------------------------------------------
@@ -256,7 +270,18 @@ R3 (P5 sentinel hardening + ns_flags simplification)
   ns_flags simplification : u/Zealousideal_Lie_850, comment on the
     original P5 thread.
 
-Q3.6-1 (covered above as a shipped patch).
+Q3.6-1, Q3.6-6 (covered above as shipped patches).
+
+Q3.6-7 (Qwen3.6 strengthened <IMPORTANT> tool-call instructions) — OPT-IN
+  Reporter / Fix author : jscott3201 (GitHub gist
+    e4b155885cc68c038d6ac8909a3bd9fe, its patch "Q6"). Snapshotted at
+    docs/sources/gists/jscott3201-e4b15588-qwen36-custom.jinja.
+  Cited failure-mode sources : QwenLM/Qwen3-Coder#475 (omitted opening
+    <tool_call> tag); block/goose#6883 (indented + nested tool calls).
+  Template author : Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
+  Status : Opt-in. Ships patches/qwen3.6/Q3.6-7-strengthened-tool-instructions.patch
+    but is NOT applied to the shipped patched/35B-A3B.jinja (in-prompt
+    instruction text, not render-verifiable — same treatment as G8/G6).
 
 G1 (Gemma 4 `is sequence` minijinja crash)
   Reporter : u/Reaper_9382, r/LocalLLaMA "Fix Gemma 4 MCP tool calls

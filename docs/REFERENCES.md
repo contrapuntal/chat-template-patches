@@ -147,6 +147,17 @@ Other relevant Qwen-publisher discussions:
 | [`#1817`](https://github.com/QwenLM/Qwen3/issues/1817) | Thinking mode plans tool calls but fails to execute ~60% (vLLM) | Not template-side |
 | [`#1821`](https://github.com/QwenLM/Qwen3/issues/1821) | Tool args: spaces inserted between CJK and ASCII/digits | **wontfix** Apr 2026 |
 
+## GitHub — tool-call formatting trackers (Q3.6-6 / Q3.6-7)
+
+| Issue | Repo | Title | Supports |
+|---|---|---|---|
+| [`#475`](https://github.com/QwenLM/Qwen3-Coder/issues/475) | QwenLM/Qwen3-Coder | Model omits the opening `<tool_call>` tag (emits bare `<function=...>`) | **Q3.6-7** (don't-omit bullet); cross-ref **Q3.6-6** (envelope/format family) |
+| [`#6883`](https://github.com/block/goose/issues/6883) | block/goose | Qwen tool calls fail when `<tool_call>` is indented / nested | **Q3.6-7** (no-indentation + no-nesting bullets) |
+
+The `tool.function` definition-unwrap convention behind **Q3.6-6** is canonical
+in Qwen's own `Qwen/Qwen3-Coder-Next/chat_template.jinja` (publisher) and was
+surfaced for Qwen3.6 by jscott3201's gist (snapshotted; see Gists below).
+
 ## GitHub — `Blaizzy/mlx-vlm`
 
 | Issue / PR | Title | Author | Supports |
@@ -245,6 +256,7 @@ Other relevant Qwen-publisher discussions:
 | [`gist.github.com/sudoingX/c2facf7d8f7608c65c1024ef3b22d431`](https://gist.github.com/sudoingX/c2facf7d8f7608c65c1024ef3b22d431) | sudoingX | `docs/sources/gists/sudoingX-c2facf7d-qwen35-27b-fixed.jinja` | parallel rediscovery of P10 + R1 |
 | [`gist.github.com/lekoOwO/c6aed944a636abccfe2c3912be34b904`](https://gist.github.com/lekoOwO/c6aed944a636abccfe2c3912be34b904) | lekoOwO | `docs/sources/gists/lekoOwO-c6aed944-qwen35-fork.jinja` | fork of sudoingX |
 | [`gist.github.com/fakezeta/9e8e039c60332fcb143c6e805558afe0`](https://gist.github.com/fakezeta/9e8e039c60332fcb143c6e805558afe0) | fakezeta | `docs/sources/gists/fakezeta-9e8e039c-qwen36-merged.jinja` | **Q3.6-3** attribution context (Qwen3.6 shipped) and **P11** (Qwen3.5 sibling, deferred) — derivative LLM-assisted merge of allanchan339 + froggeric Qwen3.6 templates; also adds a `</thinking>` rfind branch in the auto-close block that neither parent has. |
+| [`gist.github.com/jscott3201/e4b155885cc68c038d6ac8909a3bd9fe`](https://gist.github.com/jscott3201/e4b155885cc68c038d6ac8909a3bd9fe) | jscott3201 | `docs/sources/gists/jscott3201-e4b15588-qwen36-custom.jinja` | **Q3.6-6** (tool-definition envelope unwrap, its patch "Q5") + **Q3.6-7** (strengthened tool instructions, its patch "Q6", opt-in). Six-patch public Qwen3.6 fork for agentic harnesses; its Q1/Q2/Q3/Q4 overlap with this repo's existing Q3.6-1 / unsloth-upstream / Q3.6-4 / Q3.6-3 (or are weaker). |
 
 ## Standards / external docs
 
@@ -261,7 +273,7 @@ aldegr (GH `aldehir`), allanchan339, asfbrz96, Addyad, barubary, berkidem,
 CMay, deladuck, deven367, Dopey24, Evita, ex-arman68, fairydreaming,
 fakezeta, FastHotEmu, froggeric, Galunid, gelim, Giant-Space-Bee, Glademist, Gohab2001,
 Goulustis, grapevine-AI, jrp2014, jpohhhh / jpohhhhh, Jacksao1970,
-kik4444, lacerbi, latent-variable, lekoOwO, lucksufe, manfred_exz,
+jscott3201, kik4444, lacerbi, latent-variable, lekoOwO, lucksufe, manfred_exz,
 markqvist, mlhher, NatTuck, nightmedia, nnorris7, No_Information9314,
 notdba, onil_gova, pwilkin, Reaper_9382, RealChaoz, reza-yousefi, rkuovc,
 Sadman782, sanjay3290, Substantial_Swan_144, sudoingX, taronaeo, tha80,

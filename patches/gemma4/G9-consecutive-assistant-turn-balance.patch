@@ -1,0 +1,81 @@
+From: chat-template-patches
+Subject: [G9] Balance turn open/close for consecutive assistant messages
+
+Targets: templates/gemma4/patched/{26B-A4B-it,31B-it,E2B-it,E4B-it}.jinja (state after G7 applied)
+
+Failure mode. Two back-to-back assistant messages (no intervening user/tool)
+render an ORPHANED `<turn|>` close with no matching `<|turn>` open. Upstream's
+`continue_same_model_turn` rule (added intentionally) suppresses the SECOND
+assistant's `<|turn>model` OPEN so the two share one turn — but the FIRST
+assistant already emitted its `<turn|>` CLOSE at the end of its own loop
+iteration. Net: one open, two closes for the merged turn. Reproduced on
+`templates/gemma4/upstream/31B-it.jinja` with [user, assistant, assistant, user]:
+
+    <|turn>user
+    Hi<turn|>
+    <|turn>model
+    FIRST<turn|>          <-- premature close
+    SECOND<turn|>         <-- orphaned close (no matching open)
+    <|turn>user
+    Next<turn|>
+
+  → opens=3, closes=4. Breaks prefix/KV-cache symmetry and confuses parsers
+  that pair turn markers.
+
+Fix. Make the close mirror the open. The open is suppressed when the PREVIOUS
+non-tool message is an assistant (`continue_same_model_turn`, backward scan).
+G9 adds the symmetric FORWARD scan: when the NEXT non-tool message is an
+assistant whose open will be suppressed, DEFER this message's close (emit a
+newline so merged contents don't glue, but no `<turn|>`). The continuation
+message emits the single close. Result for the case above:
+
+    <|turn>model
+    FIRST
+    SECOND<turn|>         <-- one open, one close
+
+  → balanced. Normal user/assistant alternation is byte-identical (the forward
+  scan finds a non-assistant next message, so the close fires as before).
+
+Scope. The defer is guarded with `and not ns_tr_out.flag` so G9 never touches
+G7's tool-response close path. CONSEQUENCE: the rarer "assistant-with-
+tool_responses immediately followed by a bare assistant" sequence retains the
+pre-existing open/close asymmetry (the open-suppression fires but the close is
+not deferred). That sequence was neither reported nor reproduced; fixing it
+would entangle G9 with G7's tool-response handling. Left as a documented scope
+boundary — see docs/PATCH-CATALOG.md § G9.
+
+Sibling. Same close-marker logic as G7 (empty-content tool-call turn closure);
+G9 is the consecutive-assistant case of turn-marker balance.
+
+Stacks on G7. Diff is against the G7-applied state. The change is applied
+identically to all four patched sizes; the hunk below for 26B-A4B-it is
+representative.
+
+--- a/templates/gemma4/patched/26B-A4B-it.jinja
++++ b/templates/gemma4/patched/26B-A4B-it.jinja
+@@ -233,6 +233,15 @@
+     {%- if not continue_same_model_turn -%}
+         {{- '<|turn>' + role + '\n' }}
+     {%- endif -%}
++    {#- G9: forward-scan to the next non-tool message. If it is an assistant whose <|turn>model open will be suppressed by continue_same_model_turn, defer THIS message's close so both share one balanced open/close pair (no orphaned <turn|>). -#}
++    {%- set next_nt = namespace(role=None, found=false) -%}
++    {%- for j in range(loop.index0 + 1, loop_messages | length) -%}
++        {%- if not next_nt.found and loop_messages[j]['role'] != 'tool' -%}
++            {%- set next_nt.role = loop_messages[j]['role'] -%}
++            {%- set next_nt.found = true -%}
++        {%- endif -%}
++    {%- endfor -%}
++    {%- set continued_by_model = (role == 'model' and next_nt.role == 'assistant') -%}
+
+     {#- Render reasoning/reasoning_content as thinking channel -#}
+     {%- set thinking_text = message.get('reasoning') or message.get('reasoning_content') -%}
+@@ -338,6 +347,9 @@
+
+         {%- if ns.prev_message_type == 'tool_call' and not ns_tr_out.flag -%}
+             {{- '<|tool_response>' -}}
++        {%- elif continued_by_model and not ns_tr_out.flag -%}
++            {#- G9: defer close; the next assistant message continues this model turn (mirrors the open-suppression). Emit a newline so merged contents don't glue. -#}
++            {{- '\n' -}}
+         {%- else -%}
+             {{- '<turn|>\n' -}}
+         {%- endif -%}

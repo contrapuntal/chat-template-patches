@@ -64,13 +64,15 @@ Other relevant Qwen-publisher discussions:
 | [`google/gemma-4-31B-it/discussions/86`](https://huggingface.co/google/gemma-4-31B-it/discussions/86) ([commit `145dc25`](https://huggingface.co/google/gemma-4-31B-it/commit/145dc2508c480a64b47242f160d286cff94a2343)) | 31B-it (also propagated to 26B-A4B / E2B / E4B) | `fix(chat_template): update SI and tool call handling` (`filter_keys`, multimodal SI content, `has_content` refactor) | **MERGED** ~2026-04-28 by RyanMullins (author: dougreid, Google) | **G7** rebase context — current `upstream/` reflects this commit |
 | [`google/gemma-4-31B-it/discussions/91`](https://huggingface.co/google/gemma-4-31B-it/discussions/91) (commit `4238b5d`) | 31B-it | JSON Schema robustness (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type/null) | Open, ready to merge (6↑, 7d old) | **G8** (publisher PR) |
 | [`google/gemma-4-26B-A4B-it/discussions/15`](https://huggingface.co/google/gemma-4-26B-A4B-it/discussions/15) | 26B-A4B-it | Tool-call generation failure in deeper agentic loops (model says it will call, doesn't) | Open, repro provided to Google | **G6** field signal (not template-fixable) |
+| [`google/gemma-4-31B-it/discussions/62`](https://huggingface.co/google/gemma-4-31B-it/discussions/62) | 31B-it | "Chat Template has a bug" — consecutive assistant messages leave an orphaned `<turn\|>` close (Reithan); Google (@pannaga10) reproduced + escalated | **OPEN** (2026-05-30 sweep) | **G9** (reporter; fix gist `Reithan/a7431dc0c0b239688a24087bb25c0002`) |
+| [LM Studio bug-tracker `#1749`](https://github.com/lmstudio-ai/lmstudio-bug-tracker/issues/1749) | (LM Studio app) | `Cannot apply filter upper to UndefinedValue` on a Gemma 4 tool param with undefined/union `type` | Open | **G8** real-world repro (already fixed by G8's `type is defined` guards) |
 
 ## HuggingFace discussions — community quants
 
 | Thread | Topic | Supports |
 |---|---|---|
 | [`unsloth/Qwen3.5-35B-A3B-GGUF/discussions/9`](https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/discussions/9) | Add support for developer role (Codex compatibility) | **P10** (independent confirmation) |
-| [`unsloth/Qwen3.5-35B-A3B-GGUF/discussions/34`](https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/discussions/34) + [`#36`](https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/discussions/36) | Multi-system messages + developer role | Multi-system not yet a catalog patch |
+| [`unsloth/Qwen3.5-35B-A3B-GGUF/discussions/34`](https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/discussions/34) + [`#36`](https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/discussions/36) | Multi-system messages + developer role | Multi-system merge not yet a catalog patch. **Qwen3.5-only** — Qwen3.6 already merges leading system/developer messages via `num_sys`/`merged_system` (caps at 2). Any future patch here is a Qwen3.5 backport that should also generalize the Qwen3.6 merge beyond 2; it does **not** apply to Qwen3.6 as-is (2026-05-30 research sweep corrected a candidate that wrongly framed Qwen3.6 as affected). |
 | [`unsloth/Qwen3.5-35B-A3B-GGUF/discussions/10`](https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/discussions/10) | Feb 27: GGUF Update + Tool-calling fixes (pinned) | **P2** confirmed upstream |
 | [`unsloth/Qwen3.5-35B-A3B-GGUF/discussions/31`](https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/discussions/31) | Mar 5: 'Final' Update: iMatrix + Benchmarks (pinned) | publisher status snapshot |
 | [`unsloth/Qwen3.6-35B-A3B-GGUF/discussions/2`](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/discussions/2) | 2-bit Qwen3.6 Tool-calling is amazing!! (pinned) | publisher confirmation |
@@ -275,7 +277,8 @@ fakezeta, FastHotEmu, froggeric, Galunid, gelim, Giant-Space-Bee, Glademist, Goh
 Goulustis, grapevine-AI, jrp2014, jpohhhh / jpohhhhh, Jacksao1970,
 jscott3201, kik4444, lacerbi, latent-variable, lekoOwO, lucksufe, manfred_exz,
 markqvist, mlhher, NatTuck, nightmedia, nnorris7, No_Information9314,
-notdba, onil_gova, pwilkin, Reaper_9382, RealChaoz, reza-yousefi, rkuovc,
+notdba, onil_gova, pannaga10, pwilkin, Reaper_9382, RealChaoz, Reithan,
+reza-yousefi, rkuovc,
 Sadman782, sanjay3290, Substantial_Swan_144, sudoingX, taronaeo, tha80,
 TomTheWise, TrevorS, trevorgordon981, trshimizu, Whamp, will-lms,
 WyattTheSkid, ZUIcat, Zealousideal_Lie_850.

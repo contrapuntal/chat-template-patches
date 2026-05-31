@@ -233,6 +233,15 @@
     {%- if not continue_same_model_turn -%}
         {{- '<|turn>' + role + '\n' }}
     {%- endif -%}
+    {#- G9: forward-scan to the next non-tool message. If it is an assistant whose <|turn>model open will be suppressed by continue_same_model_turn, defer THIS message's close so both share one balanced open/close pair (no orphaned <turn|>). -#}
+    {%- set next_nt = namespace(role=None, found=false) -%}
+    {%- for j in range(loop.index0 + 1, loop_messages | length) -%}
+        {%- if not next_nt.found and loop_messages[j]['role'] != 'tool' -%}
+            {%- set next_nt.role = loop_messages[j]['role'] -%}
+            {%- set next_nt.found = true -%}
+        {%- endif -%}
+    {%- endfor -%}
+    {%- set continued_by_model = (role == 'model' and next_nt.role == 'assistant') -%}
 
     {#- Render reasoning/reasoning_content as thinking channel -#}
     {%- set thinking_text = message.get('reasoning') or message.get('reasoning_content') -%}
@@ -338,6 +347,9 @@
 
         {%- if ns.prev_message_type == 'tool_call' and not ns_tr_out.flag -%}
             {{- '<|tool_response>' -}}
+        {%- elif continued_by_model and not ns_tr_out.flag -%}
+            {#- G9: defer close; the next assistant message continues this model turn (mirrors the open-suppression). Emit a newline so merged contents don't glue. -#}
+            {{- '\n' -}}
         {%- else -%}
             {{- '<turn|>\n' -}}
         {%- endif -%}

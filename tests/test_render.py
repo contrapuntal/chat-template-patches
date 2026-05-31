@@ -181,6 +181,90 @@ def test_g7_patched_fixes_bug(template_pairs, size: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# G9 — Gemma 4 consecutive-assistant turn open/close balance
+# ---------------------------------------------------------------------------
+
+
+def _turn_counts(out: str) -> tuple[int, int]:
+    """Return (opens, closes) for Gemma 4 turn markers: `<|turn>` opens a turn,
+    `<turn|>` closes it. A balanced render has opens == closes."""
+    return out.count("<|turn>"), out.count("<turn|>")
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g9_upstream_imbalanced_on_consecutive_assistant(template_pairs, size: str) -> None:
+    """Upstream Gemma 4 leaves an ORPHANED `<turn|>` close on two back-to-back
+    assistant messages: the second's `<|turn>model` open is suppressed
+    (continue_same_model_turn) but the first already closed → closes > opens.
+
+    If this ever balances on upstream, upstream fixed it and G9 can retire."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    fixture = load_fixture("gemma4_consecutive_assistant")
+    out = render(pair.upstream, fixture)
+    opens, closes = _turn_counts(out)
+    assert closes > opens, (
+        f"upstream {size} unexpectedly balanced turn markers "
+        f"(opens={opens}, closes={closes}) — G9 may already be fixed upstream; "
+        f"update catalog status.\n{out!r}"
+    )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g9_patched_balances_consecutive_assistant(template_pairs, size: str) -> None:
+    """With G9, two consecutive assistant messages share ONE balanced
+    open/close pair: opens == closes, both message bodies survive, and there is
+    no orphaned `<turn|>`."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    if not pair.patched_exists:
+        pytest.skip(f"{size} patched not present")
+    fixture = load_fixture("gemma4_consecutive_assistant")
+    out = render(pair.patched, fixture)
+    opens, closes = _turn_counts(out)
+    assert opens == closes, (
+        f"G9 broken — patched {size} turn markers still imbalanced "
+        f"(opens={opens}, closes={closes}).\n{out!r}"
+    )
+    assert "FIRST_ASSISTANT_MARKER" in out and "SECOND_ASSISTANT_MARKER" in out, (
+        f"G9 dropped assistant content on {size}.\n{out!r}"
+    )
+    # The merged model turn must hold BOTH bodies between a single open/close:
+    # i.e. no `<turn|>` appears between the two markers.
+    a = out.find("FIRST_ASSISTANT_MARKER")
+    b = out.find("SECOND_ASSISTANT_MARKER")
+    assert 0 <= a < b, f"unexpected ordering on {size}\n{out!r}"
+    assert "<turn|>" not in out[a:b], (
+        f"G9 broken — a `<turn|>` close still sits between the two assistant "
+        f"messages on {size} (they were not merged into one turn).\n{out!r}"
+    )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g9_patched_leaves_normal_alternation_unchanged(template_pairs, size: str) -> None:
+    """Regression: G9's forward-scan must NOT change normal user/assistant
+    alternation — the next non-tool message there is a user, so the close fires
+    exactly as before. Patched render must equal upstream-shape balance."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    if not pair.patched_exists:
+        pytest.skip(f"{size} patched not present")
+    normal = {
+        "_applies_to": ["gemma4"],
+        "messages": [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello"},
+            {"role": "user", "content": "More"},
+            {"role": "assistant", "content": "Sure"},
+        ],
+        "add_generation_prompt": False,
+    }
+    out = render(pair.patched, normal)
+    opens, closes = _turn_counts(out)
+    assert opens == closes and opens >= 4, (
+        f"G9 regressed normal alternation on {size} "
+        f"(opens={opens}, closes={closes}).\n{out!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
 # ---------------------------------------------------------------------------
 

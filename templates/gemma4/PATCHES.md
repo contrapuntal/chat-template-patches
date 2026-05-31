@@ -4,10 +4,14 @@ Default stack applied in `patched/` (per-file basis):
 
 | File | Patches applied | Bytes vs upstream | Notes |
 |---|---|---|---|
-| `patched/26B-A4B-it.jinja` | G7 | -25 | Active fix for empty-content tool-call infinite loop |
-| `patched/31B-it.jinja` | G7 | -25 | Same template family as 26B-A4B |
-| `patched/E2B-it.jinja` | G7 | -25 | Small variant; lacks thinking-channel logic |
-| `patched/E4B-it.jinja` | G7 | -25 | Same template family as E2B |
+| `patched/26B-A4B-it.jinja` | G7, G9 | +902 | **G7**: empty-content tool-call infinite-loop close fix. **G9**: balances turn open/close for consecutive assistant messages (orphaned `<turn\|>`). |
+| `patched/31B-it.jinja` | G7, G9 | +902 | Same template family as 26B-A4B |
+| `patched/E2B-it.jinja` | G7, G9 | +902 | Small variant; lacks thinking-channel logic |
+| `patched/E4B-it.jinja` | G7, G9 | +902 | Same template family as E2B |
+
+G9 stacks on G7; both are applied to all four `patched/` files. The reference
+diff in `patches/gemma4/G9-consecutive-assistant-turn-balance.patch` is against
+the G7-applied state (representative 26B-A4B-it hunk; identical across sizes).
 
 Opt-in patches not applied to `patched/`:
 

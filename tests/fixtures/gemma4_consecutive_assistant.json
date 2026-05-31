@@ -1,0 +1,12 @@
+{
+  "_applies_to": ["gemma4"],
+  "_description": "Reproduction fixture for G9 (consecutive-assistant turn open/close balance). Two back-to-back assistant messages with no intervening user/tool. Upstream suppresses the second assistant's `<|turn>model` OPEN (continue_same_model_turn) but the first already emitted its `<turn|>` CLOSE, leaving an orphaned close -> opens != closes. G9 defers the first message's close so the two share one balanced open/close pair.",
+  "_bug": "HF google/gemma-4-31B-it discussion #62 (Reithan; Google reproduced + escalated, OPEN). Sibling of G7 turn-marker close logic.",
+  "messages": [
+    {"role": "user", "content": "Hi"},
+    {"role": "assistant", "content": "FIRST_ASSISTANT_MARKER"},
+    {"role": "assistant", "content": "SECOND_ASSISTANT_MARKER"},
+    {"role": "user", "content": "Next question"}
+  ],
+  "add_generation_prompt": false
+}

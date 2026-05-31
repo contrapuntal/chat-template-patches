@@ -49,6 +49,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | G6 | Gemma 4 | Tool-calling / system-prompt compliance grab-bag | **active** (open upstream; configuration recommendations rather than a discrete template patch) | community-ephemeral (multiple Reddit threads) | Gemma 4 26B-A4B-it primarily |
 | G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **active** | derived (bug report: upstream-tracker `Blaizzy/mlx-vlm#1033` + `#1034`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 | G8 | Gemma 4 | JSON Schema robustness in tool declarations (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type) | **opt-in** (pending upstream merge — HF disc #91) | community-tracker (HF discussion + Reddit; **snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+| G9 | Gemma 4 | Balance turn open/close for consecutive assistant messages — the open-suppression (`continue_same_model_turn`) left an orphaned `<turn\|>` close; G9 adds the symmetric forward-scan to defer the prior message's close | **active** | upstream-tracker (HF `google/gemma-4-31B-it` disc #62, Google-reproduced + OPEN; **reproduced locally**) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 
 ---
 
@@ -1242,4 +1243,96 @@ heavy combinator usage. The fix is a one-line addition to
 - *Template author:* Google LLC (Gemma 4 chat template, modified).
 - *Provenance tier:* community-tracker (HF discussion + Reddit;
   pastebin has a host-side delete risk so explicitly snapshotted).
+
+**Real-world repro (2026-05-30 sweep).** LM Studio bug-tracker **#1749**
+(`Cannot apply filter upper to UndefinedValue`) is an independent reproduction
+of exactly what G8 fixes: a tool param whose `type` is undefined (or a
+non-string union) hits `value['type'] | upper` and crashes. G8 already ships
+the `value['type'] is defined and value['type']` guards + array/list type
+normalization that prevent this. Added as a corroborating citation only — G8
+remains opt-in (promotion to active still wants a fixture + a re-verification
+of the HF disc #91 repo/number pairing, which differs across mirrors).
+
+---
+
+### G9 — Gemma 4 consecutive-assistant turn open/close balance
+
+**Target:** Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it. **Stacks on G7.**
+
+**Failure mode.** Two back-to-back assistant messages (no intervening
+user/tool) render an **orphaned `<turn|>` close with no matching `<|turn>`
+open**. Gemma 4 intentionally suppresses the *second* assistant's
+`<|turn>model` OPEN via `continue_same_model_turn` (a backward scan: "previous
+non-tool message was also assistant → don't re-open the model turn"). But the
+*first* assistant already emitted its `<turn|>` CLOSE at the end of its own
+loop iteration. Net: one open, two closes for what should be one merged turn.
+Reproduced on `templates/gemma4/upstream/31B-it.jinja` with messages
+`[user, assistant, assistant, user]`:
+
+```
+<|turn>model
+FIRST<turn|>      ← premature close
+SECOND<turn|>     ← orphaned close (no matching open)
+```
+→ opens=3, closes=4. Breaks prefix/KV-cache symmetry and confuses parsers that
+pair turn markers. This is the consecutive-assistant sibling of **G7** (which
+fixes the empty-content tool-call case in the same close-marker logic).
+
+**Fix.** Make the close mirror the open. The open is suppressed when the
+PREVIOUS non-tool message is an assistant; G9 adds the symmetric FORWARD scan
+and defers THIS message's close when the NEXT non-tool message is an assistant
+whose open will be suppressed:
+```jinja
+{%- set next_nt = namespace(role=None, found=false) -%}
+{%- for j in range(loop.index0 + 1, loop_messages | length) -%}
+    {%- if not next_nt.found and loop_messages[j]['role'] != 'tool' -%}
+        {%- set next_nt.role = loop_messages[j]['role'] -%}
+        {%- set next_nt.found = true -%}
+    {%- endif -%}
+{%- endfor -%}
+{%- set continued_by_model = (role == 'model' and next_nt.role == 'assistant') -%}
+```
+and in the close block:
+```jinja
+{%- elif continued_by_model and not ns_tr_out.flag -%}
+    {{- '\n' -}}   {#- defer close; emit newline so merged contents don't glue -#}
+```
+Result: `<|turn>model\nFIRST\nSECOND<turn|>` — one open, one close, balanced.
+Normal user/assistant alternation is byte-identical (next non-tool message is a
+user, so the close fires exactly as before).
+
+**Scope boundary (deliberate).** The defer is guarded with
+`and not ns_tr_out.flag`, so G9 never touches G7's tool-response close path.
+CONSEQUENCE: the rarer "assistant-with-`tool_responses` immediately followed by
+a bare assistant" sequence retains the pre-existing open/close asymmetry — the
+open-suppression fires but G9 does not defer that close. That sequence was
+neither reported nor reproduced, and fixing it would entangle G9 with G7's
+tool-response handling. Left as a documented boundary; covered indirectly by
+`test_g9_patched_leaves_normal_alternation_unchanged` (G9 must not perturb
+non-consecutive cases).
+
+**Verification fixture.** `tests/fixtures/gemma4_consecutive_assistant.json` —
+`[user, assistant, assistant, user]`. The harness asserts (per size):
+
+1. Upstream renders `closes > opens` (orphaned close present) —
+   `test_g9_upstream_imbalanced_on_consecutive_assistant`.
+2. Patched renders `opens == closes`, both assistant bodies survive, and no
+   `<turn|>` sits between them (one merged turn) —
+   `test_g9_patched_balances_consecutive_assistant`.
+3. Normal alternation is unperturbed —
+   `test_g9_patched_leaves_normal_alternation_unchanged`.
+
+**Attribution.**
+- *Reporter:* Reithan (HuggingFace) — `google/gemma-4-31B-it` discussion
+  **#62** ("Chat Template has a bug"); Google (`@pannaga10`) reproduced and
+  escalated. Status **OPEN** as of the 2026-05-30 sweep. A fix gist
+  (`Reithan/a7431dc0c0b239688a24087bb25c0002`) accompanies the thread.
+- *Fix author:* original to this repo — symmetric forward-scan mirroring the
+  template's own backward `continue_same_model_turn` open-suppression.
+  **Independently reproduced locally** against `upstream/31B-it.jinja` before
+  authoring (opens=3 vs closes=4 → balanced 3/3 after).
+- *Template author:* Google LLC (Gemma 4 chat template).
+- *Provenance tier:* upstream-tracker (the bug sits in a durable Google HF
+  discussion with a publisher-side reproduction).
+- *Upstream status:* OPEN; this patch predates any upstream resolution.
 

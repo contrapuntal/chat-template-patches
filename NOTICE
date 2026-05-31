@@ -75,6 +75,23 @@ Patch G7 — Gemma 4 empty-content tool-call assistant turn closure
   Upstream status : open as of fetch date; this patch predates any
                     upstream resolution.
 
+Patch G9 — Gemma 4 consecutive-assistant turn open/close balance
+  Reporter        : Reithan (HuggingFace) — google/gemma-4-31B-it
+                    discussion #62 ("Chat Template has a bug"); Google
+                    (@pannaga10) reproduced and escalated. Status OPEN as
+                    of the 2026-05-30 sweep. A fix gist
+                    (Reithan/a7431dc0c0b239688a24087bb25c0002) accompanies
+                    the thread.
+  Fix author      : original to this repo — symmetric forward-scan
+                    mirroring the template's own backward
+                    continue_same_model_turn open-suppression.
+                    Independently reproduced locally against
+                    upstream/31B-it.jinja before authoring.
+  Template author : Google LLC (Gemma 4 chat template).
+  Stacks on       : G7 (same turn-marker close logic).
+  Upstream status : open as of fetch date; this patch predates any
+                    upstream resolution.
+
 Patch Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
   Reporter        : u/onil_gova (Reddit) — r/LocalLLaMA "PSA: Qwen3.6 ships
                     with preserve_thinking. Make sure you have it on.",

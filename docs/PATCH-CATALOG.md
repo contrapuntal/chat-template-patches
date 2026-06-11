@@ -41,7 +41,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | Q3.6-5 | Qwen3.6 | `<\|think_off\|>` / `<\|think_on\|>` system-message sentinels for per-request thinking-mode control (R3 port + `think_on` extension; stacks on Q3.6-4) | **opt-in** (only relevant when the runtime doesn't reliably pass `chat_template_kwargs={"enable_thinking": ...}`) | community-tracker (R3 base from u/ex-arman68 r/LocalLLaMA "definitive" thread + `<\|think_on\|>` companion from froggeric **snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-*.jinja`) | Qwen3.6-35B-A3B |
 | Q3.6-6 | Qwen3.6 | Unwrap OpenAI tool-**definition** envelope (`{"type":"function","function":{...}}`) to the inner function spec at the `<tools>` site (stacks on Q3.6-5) | **active** | derived (mirrors the unwrap the same template already does at the tool-**call** site; prior art: jscott3201 gist **snapshotted** + Qwen3-Coder-Next publisher convention) | Qwen3.6-35B-A3B |
 | Q3.6-7 | Qwen3.6 | Strengthened `<IMPORTANT>` tool-call instructions (+3 bullets: don't-omit-`<tool_call>`, no-indentation, no-nesting) | **opt-in** (in-prompt instruction text, not render-verifiable; ships a `.patch` but is **not** in the default `patched/` set) | community-tracker (jscott3201 gist **snapshotted**; cites QwenLM/Qwen3-Coder#475 + block/goose#6883) | Qwen3.6-35B-A3B |
-| Q3.6-8 | Qwen3.6 | froggeric forward-tracked `consecutive_failures` two-tier tool-error escalation (seed a `<think>` correction on 1st failure, out-of-band directive on 2nd+) | **watch** (NOT implemented; gated behind an eval — `tests/fixtures/qwen36_repeated_tool_failures.json` + `docs/evals/Q3.6-8-error-escalation.md`) | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v15/v16) | Qwen3.6-35B-A3B |
+| Q3.6-8 | Qwen3.6 | froggeric forward-tracked `consecutive_failures` two-tier tool-error escalation (seed a `<think>` correction on 1st failure, out-of-band directive on 2nd+) | **watch** (NOT implemented; gated behind an eval — `tests/fixtures/qwen36_repeated_tool_failures.json` + `docs/evals/Q3.6-8-error-escalation.md`). **froggeric v18 now supplies the structural FP-detection the gate's false-positive cases demand** (`"error":`/`Exception:`/`Traceback`/`command not found`, not substrings); prefix-symmetry concern still open. | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v15/v16 → **v18/v20 snapshotted**) | Qwen3.6-35B-A3B |
 | G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | community-ephemeral (Reddit thread) | Gemma 4 26B-A4B-it, 31B-it |
 | G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | community-tracker (asfbrz96 GitHub repo + aldegr gist; both **snapshotted** at `docs/sources/github-snapshots/asf0-...` and `docs/sources/gists/aldehir-...`) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
 | G3 | Gemma 4 | Apr 2026 official template realignment | **upstream** (Google HF + llama.cpp #21704 #21760) | publisher | Gemma 4 26B-A4B-it, 31B-it |
@@ -778,6 +778,24 @@ or quoted tool output. R3's hardening switched to Qwen's delimited
 control-token convention (`<|...|>`). Q3.6-5 follows the same shape
 with a matching companion-on form.
 
+**minja-safety hardening (2026-06).** The sentinel strip uses
+`split|join`, **not** the `.replace()` method:
+```
+Old: merged_system.replace('<|think_off|>', '').replace('<|think_on|>', '')|trim
+New: (merged_system.split('<|think_off|>')|join('')).split('<|think_on|>')|join('')|trim
+```
+llama.cpp's minja silently drops the **entire** string when the replaced
+target sits at **index 0** — i.e. a system prompt that *starts* with
+`<|think_off|>` would erase the whole system block on C++ engines (jinja2 is
+unaffected, so our render harness can't see it — same engine-divergence class
+as P4). `split|join` is byte-identical under jinja2 and safe on minja. The
+parentheses are load-bearing: in Jinja `.method` binds tighter than the `|`
+filter, so without them `join('').split(...)` would parse as
+`join(''.split(...))`. Independently surfaced by froggeric
+(Qwen-Fixed-Chat-Templates v20). Guards:
+`test_q36_5_sentinel_strip_is_minja_safe` (static) +
+`test_q36_5_think_off_at_string_start` (behavioral index-0 case).
+
 **Verification fixture.** `tests/fixtures/qwen36_think_toggle_sentinels.json`
 — system message containing `<|think_off|>` plus surrounding text.
 Harness asserts:
@@ -1335,5 +1353,13 @@ non-consecutive cases).
 - *Template author:* Google LLC (Gemma 4 chat template).
 - *Provenance tier:* upstream-tracker (the bug sits in a durable Google HF
   discussion with a publisher-side reproduction).
-- *Upstream status:* OPEN; this patch predates any upstream resolution.
+- *Upstream status:* OPEN; this patch predates any upstream resolution. A
+  later Google PR — HF disc **#118** ("fix: chat template — null handling,
+  reasoning preservation, **turn-tag balance**, input validation") —
+  independently proposes a turn-tag-balance fix, corroborating G9 and
+  suggesting it may land upstream. Still **unmerged** as of 2026-06-11
+  (model files last updated ~21 days prior, per r/LocalLLaMA `1u084qi`), so
+  current `upstream/` does not yet carry it. Re-check on the next sync;
+  retire G9 to **upstream** once #118 merges and the realigned template
+  ships.
 

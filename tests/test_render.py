@@ -817,6 +817,50 @@ def test_q36_5_kwarg_path_still_works_without_sentinel(template_pairs) -> None:
     )
 
 
+def test_q36_5_sentinel_strip_is_minja_safe(template_pairs) -> None:
+    """Static guard: Q3.6-5 strips sentinels with split|join, NOT `.replace()`.
+    llama.cpp's minja silently drops the ENTIRE string when the replaced target
+    is at index 0 (a system prompt starting with `<|think_off|>`), erasing the
+    whole system block on C++ engines. split|join is byte-identical under
+    jinja2. This guards against a regression back to `.replace()`."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    src = pair.patched.read_text()
+    assert "merged_system.split('<|think_off|>')" in src, (
+        "Q3.6-5 sentinel strip no longer uses split|join — minja index-0 "
+        "payload-drop regression risk."
+    )
+    assert ".replace('<|think_off|>'" not in src and ".replace('<|think_on|>'" not in src, (
+        "Q3.6-5 reverted to `.replace()` for sentinel stripping — unsafe on "
+        "llama.cpp minja when the sentinel sits at index 0 of the system message."
+    )
+
+
+def test_q36_5_think_off_at_string_start(template_pairs) -> None:
+    """Behavioral pin for the minja-bug trigger: a system message that STARTS
+    with `<|think_off|>`. Under jinja2 both forms render the same; this fixes
+    the expected behavior (sentinel stripped, content kept, thinking flipped
+    off) for the index-0 case so the split|join form stays correct."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    payload = {
+        "messages": [
+            {"role": "system", "content": "<|think_off|>You are helpful."},
+            {"role": "user", "content": "Hi"},
+        ],
+        "add_generation_prompt": True,
+    }
+    out = render(pair.patched, payload)
+    assert "<|think_off|>" not in out, f"index-0 sentinel not stripped:\n{out!r}"
+    assert "You are helpful." in out, f"system content lost on index-0 strip:\n{out!r}"
+    gen = _generation_prompt(out)
+    assert gen.endswith("<think>\n\n</think>\n\n"), (
+        f"index-0 `<|think_off|>` did not flip thinking off:\n{gen!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Q3.6-6 — Qwen3.6 tool-definition envelope unwrap
 # ---------------------------------------------------------------------------

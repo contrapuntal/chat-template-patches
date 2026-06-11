@@ -206,6 +206,11 @@ Patch Q3.6-5 — Qwen3.6 <|think_off|> / <|think_on|> sentinels
                       precedence model is implicit in the merged
                       template; Q3.6-5 makes that precedence explicit
                       via the namespace-based override.
+  minja-safety      : froggeric (Qwen-Fixed-Chat-Templates v20,
+                      2026-06-05) surfaced that llama.cpp's minja drops
+                      the whole string on a `replace` at index 0; the
+                      Q3.6-5 sentinel strip uses split|join accordingly.
+                      Snapshotted at docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v20.jinja.
   Template author   : Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
   Stacks on         : Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4.
   Status note       : Opt-in. Modern llama.cpp `--reasoning on/off`

@@ -69,7 +69,8 @@
     {%- else %}
         {%- set ns_flags.enable_thinking = true %}
     {%- endif %}
-    {%- set merged_system = merged_system.replace('<|think_off|>', '').replace('<|think_on|>', '')|trim %}
+    {#- Q3.6-5: strip both sentinels with split|join, NOT `.replace()` — llama.cpp's minja silently drops the whole string when the replaced target sits at index 0 (e.g. a system prompt that STARTS with `<|think_off|>`). split|join is byte-identical under jinja2 and safe on C++ engines. (froggeric Qwen-Fixed-Chat-Templates v20.) -#}
+    {%- set merged_system = (merged_system.split('<|think_off|>')|join('')).split('<|think_on|>')|join('')|trim %}
 {%- endif %}
 {%- if tools and tools is iterable and tools is not mapping %}
     {{- '<|im_start|>system\n' }}

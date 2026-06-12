@@ -41,6 +41,9 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | Q3.6-5 | Qwen3.6 | `<\|think_off\|>` / `<\|think_on\|>` system-message sentinels for per-request thinking-mode control (R3 port + `think_on` extension; stacks on Q3.6-4) | **opt-in** (only relevant when the runtime doesn't reliably pass `chat_template_kwargs={"enable_thinking": ...}`) | community-tracker (R3 base from u/ex-arman68 r/LocalLLaMA "definitive" thread + `<\|think_on\|>` companion from froggeric **snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-*.jinja`) | Qwen3.6-35B-A3B |
 | Q3.6-6 | Qwen3.6 | Unwrap OpenAI tool-**definition** envelope (`{"type":"function","function":{...}}`) to the inner function spec at the `<tools>` site (stacks on Q3.6-5) | **active** | derived (mirrors the unwrap the same template already does at the tool-**call** site; prior art: jscott3201 gist **snapshotted** + Qwen3-Coder-Next publisher convention) | Qwen3.6-35B-A3B |
 | Q3.6-7 | Qwen3.6 | Strengthened `<IMPORTANT>` tool-call instructions (+3 bullets: don't-omit-`<tool_call>`, no-indentation, no-nesting) | **opt-in** (in-prompt instruction text, not render-verifiable; ships a `.patch` but is **not** in the default `patched/` set) | community-tracker (jscott3201 gist **snapshotted**; cites QwenLM/Qwen3-Coder#475 + block/goose#6883) | Qwen3.6-35B-A3B |
+| Q3.6-9 | Qwen3.6 | Replace `loop.previtem`/`loop.nextitem` with explicit `messages[loop.index0 ± 1]` indexing in the tool-response block | **opt-in** (minija / older C++ runtimes; ships a `.patch`, not in default `patched/` — like P4/P12/G1; byte-identical under jinja2) | community-tracker (froggeric v18 **snapshotted**) | Qwen3.6-35B-A3B |
+| Q3.6-10 | Qwen3.6 | `auto_disable_thinking_with_tools` kwarg (default OFF) — force thinking off when tools present (P7-analog prevention; sentinels still override) | **opt-in** (ships a `.patch`, not in default `patched/`; alternative to Q3.6-3 recovery) | community-tracker (froggeric v20 **snapshotted**) | Qwen3.6-35B-A3B |
+| Q3.6-11 | Qwen3.6 | froggeric `max_tool_arg_chars` / `max_tool_response_chars` payload truncation | **catalog-only — NOT shipped** (lossy: silently drops tool arg/response content) | community-tracker (froggeric v20 **snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-8 | Qwen3.6 | froggeric forward-tracked `consecutive_failures` two-tier tool-error escalation (seed a `<think>` correction on 1st failure, out-of-band directive on 2nd+) | **watch** (NOT implemented; gated behind an eval — `tests/fixtures/qwen36_repeated_tool_failures.json` + `docs/evals/Q3.6-8-error-escalation.md`). **froggeric v18 now supplies the structural FP-detection the gate's false-positive cases demand** (`"error":`/`Exception:`/`Traceback`/`command not found`, not substrings); prefix-symmetry concern still open. | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v15/v16 → **v18/v20 snapshotted**) | Qwen3.6-35B-A3B |
 | G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | community-ephemeral (Reddit thread) | Gemma 4 26B-A4B-it, 31B-it |
 | G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | community-tracker (asfbrz96 GitHub repo + aldegr gist; both **snapshotted** at `docs/sources/github-snapshots/asf0-...` and `docs/sources/gists/aldehir-...`) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
@@ -987,6 +990,106 @@ how G8 ships.
 - *Template author:* Alibaba Cloud / Qwen Team (Qwen3.6 chat template).
 - *Provenance tier:* community-tracker (gist; cited bugs on durable GitHub
   trackers).
+
+---
+
+### Q3.6-9 — Qwen3.6 `loop.previtem`/`loop.nextitem` → array indexing (portability, opt-in)
+
+**Target:** Qwen3.6-35B-A3B. **Stacks on Q3.6-1…Q3.6-6.**
+
+**Status: opt-in.** Ships `patches/qwen3.6/Q3.6-9-loop-previtem-portability.patch`
+but is **not** applied to the shipped `patched/35B-A3B.jinja` — same treatment as
+the other portability patches (P4 `|safe`, P12 `|items`, G1 `is sequence`).
+Standard jinja2 and current llama.cpp support `loop.previtem`/`loop.nextitem`, so
+the default template keeps the idiomatic form.
+
+**Failure mode.** The `role == "tool"` block uses `loop.previtem` (to open
+`<|im_start|>user` at the start of a tool-response run) and `loop.nextitem` (to
+close `<|im_end|>` at the end). minijinja and older llama.cpp builds don't track
+loop-state items and raise/mis-render. froggeric hit this at v18 and switched to
+explicit indexing.
+
+**Fix.** Index into `messages` (the loop subject), guarded so the index is
+always valid:
+```
+loop.previtem and loop.previtem.role != "tool"
+  → loop.index0 > 0 and messages[loop.index0 - 1].role != "tool"
+not loop.last and loop.nextitem.role != "tool"
+  → not loop.last and messages[loop.index0 + 1].role != "tool"
+```
+`loop.previtem` is falsy on the first iteration, so `loop.index0 > 0` is the
+exact equivalent; `not loop.last` guarantees `index0 + 1` is in range.
+
+**Verification.** Byte-identical under jinja2 across single-tool,
+consecutive-tool, and tool-last conversations
+(`test_q36_9_portability_rewrite_is_byte_identical`), plus an opt-in invariant
+guard (`test_q36_9_not_applied_to_shipped_template`).
+
+**Attribution.** Prior art: froggeric Qwen-Fixed-Chat-Templates v18
+(`messages[loop.index0 - 1]`), **snapshotted** at
+`docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v18.jinja`.
+Sibling: P12 (Qwen3.5 `|items`, opt-in/deferred). Template author: Alibaba Cloud
+/ Qwen Team. Provenance tier: community-tracker.
+
+---
+
+### Q3.6-10 — Qwen3.6 `auto_disable_thinking_with_tools` kwarg (opt-in)
+
+**Target:** Qwen3.6-35B-A3B. **Stacks on Q3.6-1…Q3.6-6.**
+
+**Status: opt-in.** Ships
+`patches/qwen3.6/Q3.6-10-auto-disable-thinking-with-tools.patch`, **not** applied
+to the shipped `patched/`. A default-OFF kwarg; even if applied it is a no-op
+until set.
+
+**What it does.** When `auto_disable_thinking_with_tools=true` AND tools are
+present, force thinking off (generation prompt emits the closed
+`<think>\n\n</think>\n\n`). This is the Qwen3.6 analog of **P7** (Qwen3.5:
+auto-disable thinking when tools defined), exposed as froggeric's v20 kwarg
+rather than an unconditional flip.
+
+**Prevention vs recovery.** Q3.6-3 *recovers* from a `<tool_call>` leaked inside
+an unclosed `<think>` (auto-close). Q3.6-10 *prevents* the leak by disabling
+reasoning while tools are in play. Both can coexist; default-OFF keeps Q3.6-3
+the shipped behaviour. Which to prefer is deployment-specific.
+
+**Precedence (verified).** kwarg seed → `auto_disable` → `<|think_off|>` /
+`<|think_on|>` sentinels (Q3.6-5). The block is inserted *before* sentinel
+detection, so an explicit `<|think_on|>` still overrides it. Byte-identical to
+the shipped template when the kwarg is unset.
+
+**Verification.**
+`test_q36_10_when_applied_disables_thinking_with_tools` (kwarg+tools closes
+thinking; no tools / no kwarg leaves it open; `<|think_on|>` overrides) +
+`test_q36_10_not_applied_to_shipped_template` (opt-in invariant).
+
+**Attribution.** Prior art: froggeric v20 (`auto_disable_thinking_with_tools`),
+**snapshotted** at
+`docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v20.jinja`.
+Sibling: P7 (Qwen3.5). Template author: Alibaba Cloud / Qwen Team. Provenance
+tier: community-tracker.
+
+---
+
+### Q3.6-11 — Qwen3.6 tool-payload truncation (catalog-only, NOT shipped)
+
+**Target:** Qwen3.6-35B-A3B. **Status: catalog-only — deliberately NOT shipped.**
+
+froggeric v20 adds `max_tool_arg_chars` / `max_tool_response_chars` kwargs that
+truncate tool-call arguments and tool responses in the rendered prompt to cap
+context-window blowups from large data returns.
+
+**Why we do not ship it.** Template-side truncation **silently drops tool
+argument/response content** — it is lossy and can corrupt the model's record of
+what a tool was called with or returned, in a way the model cannot detect. That
+is a different character from this repo's correctness/portability patches (which
+preserve semantics). Context-budget management belongs in the harness/runtime
+(which can summarize, elide with markers, or page), not in a chat template that
+silently rewrites history. Recorded here for completeness and to document the
+deliberate decision; revisit only if a non-lossy, clearly-marked form emerges.
+
+**Provenance.** froggeric v20 README + template (**snapshotted**); no `.patch`
+ships. Provenance tier: community-tracker.
 
 ---
 

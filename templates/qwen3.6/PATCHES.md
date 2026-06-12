@@ -11,6 +11,13 @@ Default stack applied in `patched/`:
 | Patch | Notes |
 |---|---|
 | `Q3.6-7-strengthened-tool-instructions.patch` | Strengthened `<IMPORTANT>` tool-call instructions (+3 bullets: don't-omit-`<tool_call>`, no-indentation, no-nesting). In-prompt instruction text, not render-verifiable — apply only if you observe the documented formatting failures. Diffs against the Q3.6-6-applied state. Mirrors how Gemma 4's G8 / G6 are treated. |
+| `Q3.6-9-loop-previtem-portability.patch` | Replaces `loop.previtem`/`loop.nextitem` with `messages[loop.index0 ± 1]` indexing for minija / older C++ runtimes. Byte-identical under jinja2. Diffs against the Q3.6-6-applied state. Same class as P4/P12/G1. |
+| `Q3.6-10-auto-disable-thinking-with-tools.patch` | `auto_disable_thinking_with_tools` kwarg (default OFF): forces thinking off when tools are present (P7-analog prevention; `<\|think_on\|>` still overrides). Diffs against the Q3.6-6-applied state. Alternative to Q3.6-3 recovery. |
+
+**Catalog-only (NOT shipped):** Q3.6-11 (froggeric `max_tool_arg_chars` /
+`max_tool_response_chars` payload truncation) is documented in
+`docs/PATCH-CATALOG.md` but ships no `.patch` — template-side truncation is
+lossy (silently drops tool content); context budgeting belongs in the runtime.
 
 ## Patch stacking order
 
@@ -61,5 +68,7 @@ Apply Q3.6-1 if your runtime doesn't auto-set `preserve_thinking=true`:
   - `patches/qwen3.6/Q3.6-5-think-toggle-sentinels.patch`
   - `patches/qwen3.6/Q3.6-6-tool-definition-envelope-unwrap.patch`
   - `patches/qwen3.6/Q3.6-7-strengthened-tool-instructions.patch` (opt-in)
-- Catalog entries: `docs/PATCH-CATALOG.md` §§ Q3.6-1, Q3.6-2, Q3.6-3, Q3.6-4, Q3.6-5, Q3.6-6, Q3.6-7
+  - `patches/qwen3.6/Q3.6-9-loop-previtem-portability.patch` (opt-in)
+  - `patches/qwen3.6/Q3.6-10-auto-disable-thinking-with-tools.patch` (opt-in)
+- Catalog entries: `docs/PATCH-CATALOG.md` §§ Q3.6-1 … Q3.6-11 (Q3.6-8 watch, Q3.6-11 catalog-only)
 - Provenance: `templates/qwen3.6/PROVENANCE.md`

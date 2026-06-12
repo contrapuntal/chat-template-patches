@@ -318,6 +318,26 @@ Q3.6-7 (Qwen3.6 strengthened <IMPORTANT> tool-call instructions) — OPT-IN
     but is NOT applied to the shipped patched/35B-A3B.jinja (in-prompt
     instruction text, not render-verifiable — same treatment as G8/G6).
 
+Q3.6-9 (Qwen3.6 loop.previtem/nextitem -> array indexing) — OPT-IN
+  Prior art / fix : froggeric (Qwen-Fixed-Chat-Templates v18) switched to
+    messages[loop.index0 - 1] indexing for minija / old-C++ portability.
+    Snapshotted at docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v18.jinja.
+  Sibling : P12 (Qwen3.5 |items portability). Template author: Alibaba Cloud
+    / Qwen Team. Opt-in; ships a .patch, not applied to patched/.
+
+Q3.6-10 (Qwen3.6 auto_disable_thinking_with_tools kwarg) — OPT-IN
+  Prior art : froggeric (Qwen-Fixed-Chat-Templates v20) auto_disable_thinking_with_tools
+    kwarg. Snapshotted at docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v20.jinja.
+  Sibling : P7 (Qwen3.5 auto-disable thinking when tools present).
+    Template author: Alibaba Cloud / Qwen Team. Opt-in, default OFF; ships a
+    .patch, not applied to patched/.
+
+Q3.6-11 (Qwen3.6 tool-payload truncation) — CATALOG-ONLY, NOT SHIPPED
+  Prior art : froggeric (Qwen-Fixed-Chat-Templates v20) max_tool_arg_chars /
+    max_tool_response_chars. Deliberately not shipped — lossy (silently drops
+    tool content); context budgeting belongs in the runtime. Documented in
+    docs/PATCH-CATALOG.md for completeness.
+
 G1 (Gemma 4 `is sequence` minijinja crash)
   Reporter : u/Reaper_9382, r/LocalLLaMA "Fix Gemma 4 MCP tool calls
     broken in LM Studio" (Apr 2026).

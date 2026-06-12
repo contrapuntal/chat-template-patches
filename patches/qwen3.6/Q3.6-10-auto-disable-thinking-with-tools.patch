@@ -1,0 +1,45 @@
+From: chat-template-patches
+Subject: [Q3.6-10] auto_disable_thinking_with_tools kwarg (default OFF)
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (state after Q3.6-1..Q3.6-6 applied)
+
+Status: OPT-IN. NOT applied to the shipped patched/35B-A3B.jinja. A default-OFF
+kwarg; even if applied it is a no-op until set. Offered as an alternative
+*prevention* strategy to Q3.6-3's *recovery* (auto-close): some deployments
+prefer to disable reasoning entirely while tools are in play rather than rely
+on closing a leaked <think> before <tool_call>.
+
+Behavior. When `auto_disable_thinking_with_tools=true` AND tools are present,
+force thinking off (the generation prompt emits the closed
+`<think>\n\n</think>\n\n` form). This is the Qwen3.6 analog of P7 (Qwen3.5:
+auto-disable thinking when tools defined), exposed as froggeric's v20 kwarg of
+the same name rather than an unconditional flip.
+
+Precedence (verified). kwarg seed -> auto_disable (this patch) -> `<|think_off|>`/
+`<|think_on|>` sentinels (Q3.6-5). The block is inserted BEFORE sentinel
+detection, so an explicit `<|think_on|>` still overrides auto_disable. With the
+kwarg unset the render is byte-identical to the shipped template.
+
+Scope note. Whether to prefer prevention (this) or recovery (Q3.6-3) is
+deployment-specific; both can coexist (auto_disable simply means the leak path
+is rarely reached). Default OFF keeps Q3.6-3 the shipped behavior.
+
+Prior art: froggeric Qwen-Fixed-Chat-Templates v20 (`auto_disable_thinking_with_tools`),
+snapshotted at docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v20.jinja.
+Sibling: P7 (Qwen3.5).
+
+Stacks on Q3.6-1..Q3.6-6. Diff is against the Q3.6-6-applied state.
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -46,6 +46,10 @@
+ {%- set ns_flags = namespace(enable_thinking=none) %}
+ {%- if enable_thinking is defined %}
+     {%- set ns_flags.enable_thinking = enable_thinking %}
++{%- endif %}
++{#- Q3.6-10 (opt-in): auto_disable_thinking_with_tools — when set and tools are present, force thinking OFF (P7-analog: prevents tool_call leakage inside <think>). Placed before sentinel detection so an explicit <|think_on|> still overrides. Default unset = no-op. -#}
++{%- if auto_disable_thinking_with_tools is defined and auto_disable_thinking_with_tools and tools and tools is iterable and tools is not mapping %}
++    {%- set ns_flags.enable_thinking = false %}
+ {%- endif %}
+ {%- set num_sys = 0 %}
+ {%- set merged_system = '' %}

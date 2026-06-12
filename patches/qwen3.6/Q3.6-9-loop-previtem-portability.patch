@@ -1,0 +1,49 @@
+From: chat-template-patches
+Subject: [Q3.6-9] Replace loop.previtem/loop.nextitem with array indexing (minija/C++ portability)
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (state after Q3.6-1..Q3.6-6 applied)
+
+Status: OPT-IN (minijinja / older C++-runtime portability). NOT applied to the
+shipped patched/35B-A3B.jinja. Same class as P4 / P12 / G1: standard jinja2 and
+current llama.cpp support `loop.previtem` / `loop.nextitem`, so the default
+patched template keeps the idiomatic form; apply this patch only for runtimes
+that don't track loop-state items.
+
+Failure mode. The tool-response block uses `loop.previtem` and `loop.nextitem`
+to decide the `<|im_start|>user` open and `<|im_end|>` close around runs of
+`role: "tool"` messages. minijinja and older llama.cpp builds do not implement
+those loop attributes and raise / mis-render (froggeric Qwen-Fixed-Chat-Templates
+v18 hit this and switched to explicit array indexing).
+
+Fix. Use explicit indexing into `messages` (the loop subject), guarded so the
+indices are always valid:
+- `loop.previtem and loop.previtem.role != "tool"` -> `loop.index0 > 0 and messages[loop.index0 - 1].role != "tool"` (loop.previtem is falsy on the first iteration; `loop.index0 > 0` is the equivalent guard).
+- `not loop.last and loop.nextitem.role != "tool"` -> `not loop.last and messages[loop.index0 + 1].role != "tool"` (`not loop.last` guarantees index0+1 is valid).
+
+Byte-identical under jinja2 (verified across single-tool, consecutive-tool, and
+tool-last conversations); portable to minijinja / old llama.cpp.
+
+Prior art: froggeric v18 (`messages[loop.index0 - 1]`), snapshotted at
+docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v18.jinja.
+Sibling: P12 (Qwen3.5 `|items` portability, opt-in/deferred).
+
+Stacks on Q3.6-1..Q3.6-6. Diff is against the Q3.6-6-applied state.
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -177,13 +177,13 @@
+         {%- endif %}
+         {{- '<|im_end|>\n' }}
+     {%- elif message.role == "tool" %}
+-        {%- if loop.previtem and loop.previtem.role != "tool" %}
++        {%- if loop.index0 > 0 and messages[loop.index0 - 1].role != "tool" %}
+             {{- '<|im_start|>user' }}
+         {%- endif %}
+         {{- '\n<tool_response>\n' }}
+         {{- content }}
+         {{- '\n</tool_response>' }}
+-        {%- if not loop.last and loop.nextitem.role != "tool" %}
++        {%- if not loop.last and messages[loop.index0 + 1].role != "tool" %}
+             {{- '<|im_end|>\n' }}
+         {%- elif loop.last %}
+             {{- '<|im_end|>\n' }}

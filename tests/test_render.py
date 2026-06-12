@@ -1232,3 +1232,137 @@ def test_q36_8_eval_matrix(template_pairs, case_name: str) -> None:
             f"(expected tier {case['expect_tier']}). {case['why']}\n"
             f"Output:\n{out!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-9 — loop.previtem -> array-indexing (minija portability, OPT-IN)
+# Q3.6-10 — auto_disable_thinking_with_tools kwarg (OPT-IN)
+# Both ship a .patch but are NOT applied to the shipped patched/35B-A3B.jinja.
+# ---------------------------------------------------------------------------
+
+Q36_9_PATCH = REPO_ROOT / "patches" / "qwen3.6" / "Q3.6-9-loop-previtem-portability.patch"
+Q36_10_PATCH = REPO_ROOT / "patches" / "qwen3.6" / "Q3.6-10-auto-disable-thinking-with-tools.patch"
+
+
+def _render_str(source: str, payload: dict) -> str:
+    from conftest import make_env
+
+    ctx = {
+        "bos_token": "", "eos_token": "", "pad_token": "",
+        "add_generation_prompt": True, "add_vision_id": False, "tools": None,
+    }
+    ctx.update(payload)
+    return make_env().from_string(source).render(**ctx)
+
+
+def _gen_tail(out: str) -> str:
+    idx = out.rfind("<|im_start|>assistant")
+    return out[idx:] if idx >= 0 else ""
+
+
+def test_q36_9_not_applied_to_shipped_template(template_pairs) -> None:
+    """Opt-in invariant: the shipped patched template keeps the idiomatic
+    loop.previtem/nextitem form (Q3.6-9 is opt-in minija portability)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    src = pair.patched.read_text()
+    assert "loop.previtem" in src and "loop.nextitem" in src, (
+        "shipped patched no longer uses loop.previtem/nextitem — if Q3.6-9 was "
+        "promoted to active, update the catalog and this test."
+    )
+    assert "messages[loop.index0 - 1]" not in src
+
+
+def test_q36_9_portability_rewrite_is_byte_identical(template_pairs) -> None:
+    """Applying Q3.6-9's loop.previtem->indexing rewrite in-memory renders
+    byte-identical to the shipped template under jinja2 (across single-tool,
+    consecutive-tool and tool-last conversations) — it's a pure portability
+    rewrite. Drift guard: the patch file must carry the new indexing form."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    assert Q36_9_PATCH.is_file()
+    ptext = Q36_9_PATCH.read_text()
+    assert "messages[loop.index0 - 1]" in ptext and "messages[loop.index0 + 1]" in ptext, (
+        "Q3.6-9 patch no longer carries the array-indexing rewrite."
+    )
+    src = pair.patched.read_text()
+    applied = src.replace(
+        '{%- if loop.previtem and loop.previtem.role != "tool" %}',
+        '{%- if loop.index0 > 0 and messages[loop.index0 - 1].role != "tool" %}',
+    ).replace(
+        '{%- if not loop.last and loop.nextitem.role != "tool" %}',
+        '{%- if not loop.last and messages[loop.index0 + 1].role != "tool" %}',
+    )
+    assert applied != src, "Q3.6-9 in-memory rewrite matched nothing"
+    convs = {
+        "multi-tool": [
+            {"role": "user", "content": "SF and NYC?"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"function": {"name": "w", "arguments": {"c": "SF"}}},
+                {"function": {"name": "w", "arguments": {"c": "NYC"}}}]},
+            {"role": "tool", "content": "SF sunny"},
+            {"role": "tool", "content": "NYC rain"},
+            {"role": "user", "content": "thanks"},
+        ],
+        "tool-last": [
+            {"role": "user", "content": "SF?"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"function": {"name": "w", "arguments": {"c": "SF"}}}]},
+            {"role": "tool", "content": "SF sunny"},
+        ],
+    }
+    for name, msgs in convs.items():
+        assert _render_str(src, {"messages": msgs}) == _render_str(applied, {"messages": msgs}), (
+            f"Q3.6-9 rewrite changed output under jinja2 for {name}"
+        )
+
+
+def test_q36_10_not_applied_to_shipped_template(template_pairs) -> None:
+    """Opt-in invariant: auto_disable_thinking_with_tools must NOT be in the
+    shipped patched template (default behaviour keeps Q3.6-3 recovery)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    assert "auto_disable_thinking_with_tools" not in pair.patched.read_text()
+
+
+def test_q36_10_when_applied_disables_thinking_with_tools(template_pairs) -> None:
+    """Applying Q3.6-10 in-memory: with the kwarg AND tools, the generation
+    prompt closes thinking; without tools or without the kwarg it stays open;
+    and a `<|think_on|>` sentinel still overrides (precedence)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    assert Q36_10_PATCH.is_file()
+    assert "auto_disable_thinking_with_tools" in Q36_10_PATCH.read_text()
+    src = pair.patched.read_text()
+    anchor = (
+        "{%- set ns_flags = namespace(enable_thinking=none) %}\n"
+        "{%- if enable_thinking is defined %}\n"
+        "    {%- set ns_flags.enable_thinking = enable_thinking %}\n"
+        "{%- endif %}\n"
+    )
+    assert src.count(anchor) == 1, "Q3.6-10 anchor not found in patched template"
+    applied = src.replace(anchor, anchor + (
+        "{#- Q3.6-10 -#}\n"
+        "{%- if auto_disable_thinking_with_tools is defined and auto_disable_thinking_with_tools and tools and tools is iterable and tools is not mapping %}\n"
+        "    {%- set ns_flags.enable_thinking = false %}\n"
+        "{%- endif %}\n"
+    ))
+    assert applied != src
+    TOOLS = [{"type": "function", "function": {"name": "w", "parameters": {"type": "object", "properties": {}}}}]
+    base = [{"role": "user", "content": "hi"}]
+    closed = "<think>\n\n</think>\n\n"
+    # kwarg + tools -> thinking OFF
+    out = _render_str(applied, {"messages": base, "tools": TOOLS, "auto_disable_thinking_with_tools": True})
+    assert _gen_tail(out).endswith(closed), f"auto_disable+tools should close thinking:\n{out!r}"
+    # kwarg but no tools -> unchanged (open)
+    out = _render_str(applied, {"messages": base, "auto_disable_thinking_with_tools": True})
+    assert _gen_tail(out).endswith("<think>\n") and not _gen_tail(out).endswith(closed)
+    # sentinel <|think_on|> overrides auto_disable
+    out = _render_str(applied, {
+        "messages": [{"role": "system", "content": "x<|think_on|>"}, {"role": "user", "content": "hi"}],
+        "tools": TOOLS, "auto_disable_thinking_with_tools": True})
+    assert _gen_tail(out).endswith("<think>\n"), f"<|think_on|> should override auto_disable:\n{out!r}"

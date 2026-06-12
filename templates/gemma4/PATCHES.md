@@ -4,14 +4,19 @@ Default stack applied in `patched/` (per-file basis):
 
 | File | Patches applied | Bytes vs upstream | Notes |
 |---|---|---|---|
-| `patched/26B-A4B-it.jinja` | G7, G9 | +902 | **G7**: empty-content tool-call infinite-loop close fix. **G9**: balances turn open/close for consecutive assistant messages (orphaned `<turn\|>`). |
-| `patched/31B-it.jinja` | G7, G9 | +902 | Same template family as 26B-A4B |
-| `patched/E2B-it.jinja` | G7, G9 | +902 | Small variant; lacks thinking-channel logic |
-| `patched/E4B-it.jinja` | G7, G9 | +902 | Same template family as E2B |
+| `patched/26B-A4B-it.jinja` | G7, G9, G10 | +1327 | **G7**: empty-content tool-call infinite-loop close fix. **G9**: balances turn open/close for consecutive assistant messages (orphaned `<turn\|>`). **G10**: `preserve_thinking` kwarg (default OFF) — keeps historical tool-call reasoning; byte-identical to upstream unless set. |
+| `patched/31B-it.jinja` | G7, G9, G10 | +1327 | Same template family as 26B-A4B |
+| `patched/E2B-it.jinja` | G7, G9, G10 | +1327 | Small variant; lacks thinking-channel logic |
+| `patched/E4B-it.jinja` | G7, G9, G10 | +1327 | Same template family as E2B |
 
-G9 stacks on G7; both are applied to all four `patched/` files. The reference
-diff in `patches/gemma4/G9-consecutive-assistant-turn-balance.patch` is against
-the G7-applied state (representative 26B-A4B-it hunk; identical across sizes).
+G9 stacks on G7, and G10 stacks on G9; all three are applied to the four
+`patched/` files. Reference diffs are representative 26B-A4B-it hunks (identical
+across sizes), each against the prior-stage state:
+`patches/gemma4/G9-consecutive-assistant-turn-balance.patch` (vs G7) and
+`patches/gemma4/G10-preserve-thinking.patch` (vs G7+G9). **G10 is a default-OFF
+kwarg gate** — it ships in `patched/` but changes nothing unless
+`preserve_thinking=true` is passed (so it's listed in the applied stack, not the
+opt-in section, but its *behaviour* is opt-in).
 
 Opt-in patches not applied to `patched/`:
 

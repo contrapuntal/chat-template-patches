@@ -92,6 +92,19 @@ Patch G9 — Gemma 4 consecutive-assistant turn open/close balance
   Upstream status : open as of fetch date; this patch predates any
                     upstream resolution.
 
+Patch G10 — Gemma 4 preserve_thinking kwarg (default OFF)
+  Reporter        : community (r/LocalLLaMA Gemma 4 12B tool-calling
+                    threads); same failure family as earendil-works/pi#3325
+                    and Qwen3.6's Q3.6-1.
+  Upstream analog : Google PR HF disc #118 ("reasoning preservation"),
+                    UNMERGED as of 2026-06-11 — so G10 is derived, not a
+                    port of a finished upstream template.
+  Fix author      : original to this repo — minimal kwarg gate on the
+                    template's existing current-turn-region guard;
+                    default OFF (byte-identical to upstream unless set).
+  Template author : Google LLC (Gemma 4 chat template).
+  Stacks on       : G7 + G9.
+
 Patch Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
   Reporter        : u/onil_gova (Reddit) — r/LocalLLaMA "PSA: Qwen3.6 ships
                     with preserve_thinking. Make sure you have it on.",

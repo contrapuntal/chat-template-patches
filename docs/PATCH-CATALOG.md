@@ -51,6 +51,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **active** | derived (bug report: upstream-tracker `Blaizzy/mlx-vlm#1033` + `#1034`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 | G8 | Gemma 4 | JSON Schema robustness in tool declarations (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type) | **opt-in** (pending upstream merge — HF disc #91) | community-tracker (HF discussion + Reddit; **snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 | G9 | Gemma 4 | Balance turn open/close for consecutive assistant messages — the open-suppression (`continue_same_model_turn`) left an orphaned `<turn\|>` close; G9 adds the symmetric forward-scan to defer the prior message's close | **active** | upstream-tracker (HF `google/gemma-4-31B-it` disc #62, Google-reproduced + OPEN; **reproduced locally**) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+| G10 | Gemma 4 | `preserve_thinking` kwarg — render historical tool-call reasoning (not just the current-turn region), curing multi-step agentic `arguments: {}` collapse | **active**, but **default-OFF** kwarg gate (byte-identical to upstream unless `preserve_thinking=true`) | derived (Gemma analog of Q3.6-1; upstream PR HF disc #118 **unmerged**, so derived not ported) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 
 ---
 
@@ -1362,4 +1363,70 @@ non-consecutive cases).
   current `upstream/` does not yet carry it. Re-check on the next sync;
   retire G9 to **upstream** once #118 merges and the realigned template
   ships.
+
+---
+
+### G10 — Gemma 4 `preserve_thinking` (default-OFF kwarg)
+
+**Target:** Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it. **Stacks on G7 + G9.**
+
+**Failure mode.** Gemma 4 drops prior-turn reasoning from history. The
+dedicated `reasoning` / `reasoning_content` field is rendered as a
+`<|channel>thought` block only for the **current-turn region** — the guard is
+`thinking_text and loop.index0 > ns_turn.last_user_idx and message.get('tool_calls')`.
+So a **historical** tool-call turn's reasoning is never re-emitted. In
+multi-step agentic loops the model loses its own trace of how it chose
+arguments last time and, after 2-3 turns, later tool calls collapse to
+`arguments: {}` even though the prior reasoning had identified the parameters.
+This is the Gemma analog of **Q3.6-1** (Qwen3.6) and of the Qwen failure in
+`earendil-works/pi#3325`; reported for Gemma 4 in r/LocalLLaMA 12B tool-calling
+threads and in Google's (unmerged) PR HF disc #118 ("reasoning preservation").
+
+**Fix.** Add a `preserve_thinking` kwarg; when set, relax the
+current-region-only guard so historical tool-call reasoning renders too:
+```jinja
+{%- if thinking_text and ((preserve_thinking is defined and preserve_thinking) or loop.index0 > ns_turn.last_user_idx) and message.get('tool_calls') -%}
+```
+
+**Default OFF — deliberate, and why this differs from Q3.6-1.** Q3.6-1 flips
+Qwen3.6's `preserve_thinking` default *on* because Qwen's model card recommends
+it. For Gemma the situation is the opposite: Google's reasoning-preservation
+change is an **unmerged** PR (#118) and the community stance was contested, so a
+*derived* patch must not presume Google's intent. G10 therefore ships in
+`patched/` but is **byte-identical to upstream unless `preserve_thinking=true`
+is passed** (verified for both no-kwarg and `preserve_thinking=false`). It's an
+opt-in escape hatch for agentic users hitting the collapse bug, and it lays the
+kwarg plumbing for a future default-flip (a "G10b", à la Q3.6-1→Q3.6-2) once
+#118 lands or the model card confirms the stance.
+
+**Scope.** Gates only the reasoning-**field** render (the OpenAI-harness flow
+the bug reports describe). `strip_thinking()` — which removes `<|channel>thought`
+embedded in model **content** — is intentionally left unchanged. The template's
+existing tool-call scoping (`and tool_calls`) is preserved: non-tool assistant
+turns still drop reasoning, matching upstream design.
+
+**KV-cache note.** preserve_thinking *improves* prefix symmetry: a tool-call
+turn that rendered WITH thinking while current would, without this kwarg,
+re-render WITHOUT thinking once it becomes history (a cache-busting asymmetry).
+With the kwarg on, history matches the original generation — the same property
+Q3.6-1 buys for Qwen3.6.
+
+**Verification fixture.** `tests/fixtures/gemma4_history_tool_call_reasoning.json`
+— a historical tool-call turn carrying `reasoning` before the last user
+message, plus a current one after. Per-size tests assert (1) default drops the
+historical reasoning, (2) `preserve_thinking=true` retains it, (3) the
+default/`false` render is byte-identical to the synthesized pre-G10 (G7+G9)
+state.
+
+**Attribution.**
+- *Reporter:* community (r/LocalLLaMA Gemma 4 12B tool-calling threads); same
+  failure family as `earendil-works/pi#3325`.
+- *Upstream analog:* Google PR **HF disc #118** ("reasoning preservation"),
+  unmerged as of 2026-06-11 — so G10 is **derived**, not a port of a finished
+  template.
+- *Fix author:* original to this repo — minimal kwarg gate on the template's
+  existing current-region guard. Lever verified by render before authoring.
+- *Template author:* Google LLC (Gemma 4 chat template).
+- *Provenance tier:* derived (bug report community-tracker; upstream PR exists
+  but unmerged / diff behind the discussion UI).
 

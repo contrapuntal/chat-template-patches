@@ -245,7 +245,8 @@
 
     {#- Render reasoning/reasoning_content as thinking channel -#}
     {%- set thinking_text = message.get('reasoning') or message.get('reasoning_content') -%}
-    {%- if thinking_text and loop.index0 > ns_turn.last_user_idx and message.get('tool_calls') -%}
+    {#- G10: preserve_thinking (default OFF) — when set, render historical tool-call reasoning too (not just the current-turn region), curing the agentic arguments-collapse where dropped prior reasoning makes later tool calls emit `arguments: {}`. Byte-identical to upstream when the kwarg is unset. Derived; upstream analog: Google PR HF disc #118 (unmerged). -#}
+    {%- if thinking_text and ((preserve_thinking is defined and preserve_thinking) or loop.index0 > ns_turn.last_user_idx) and message.get('tool_calls') -%}
         {{- '<|channel>thought\n' + thinking_text + '\n<channel|>' -}}
     {%- endif -%}
 

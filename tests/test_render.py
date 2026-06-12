@@ -265,6 +265,85 @@ def test_g9_patched_leaves_normal_alternation_unchanged(template_pairs, size: st
 
 
 # ---------------------------------------------------------------------------
+# G10 — Gemma 4 preserve_thinking (default-OFF kwarg, keeps historical reasoning)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g10_default_drops_historical_tool_reasoning(template_pairs, size: str) -> None:
+    """By default (no kwarg) Gemma 4 renders a tool-call turn's reasoning only
+    for the current-turn region, so the HISTORICAL turn's reasoning is dropped.
+    Patched default behaviour must match this (G10 is gated off by default)."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    if not pair.patched_exists:
+        pytest.skip(f"{size} patched not present")
+    fixture = load_fixture("gemma4_history_tool_call_reasoning")
+    out = render(pair.patched, fixture)
+    assert "CUR_REASONING_MARKER" in out, (
+        f"current-turn reasoning unexpectedly dropped on {size}:\n{out!r}"
+    )
+    assert "HIST_REASONING_MARKER" not in out, (
+        f"patched {size} preserved historical reasoning WITHOUT the kwarg — "
+        f"G10 must be off by default.\n{out!r}"
+    )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g10_preserve_thinking_keeps_historical_reasoning(template_pairs, size: str) -> None:
+    """With preserve_thinking=true, the historical tool-call turn's reasoning
+    is rendered too (the fix for multi-step agentic arguments-collapse)."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    if not pair.patched_exists:
+        pytest.skip(f"{size} patched not present")
+    fixture = load_fixture("gemma4_history_tool_call_reasoning")
+    payload = {**fixture, "preserve_thinking": True}
+    out = render(pair.patched, payload)
+    assert "HIST_REASONING_MARKER" in out and "CUR_REASONING_MARKER" in out, (
+        f"G10 broken — preserve_thinking=True did not retain historical "
+        f"reasoning on {size}.\n{out!r}"
+    )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g10_default_byte_identical_to_pre_g10(template_pairs, size: str) -> None:
+    """G10 is a default-OFF kwarg gate. Synthesize the pre-G10 (G7+G9) state by
+    reverting just the guard expression in-memory, then assert that with no
+    kwarg (and with preserve_thinking=false) the shipped template renders
+    byte-identical to that pre-G10 state — proving zero default-behaviour
+    change. (Comparing to `upstream` would be wrong here: this fixture's
+    empty-content tool-call turns are exactly G7's domain, so patched != upstream
+    by design.)"""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    if not pair.patched_exists:
+        pytest.skip(f"{size} patched not present")
+    src = pair.patched.read_text()
+    g10_guard = (
+        "((preserve_thinking is defined and preserve_thinking) "
+        "or loop.index0 > ns_turn.last_user_idx)"
+    )
+    assert g10_guard in src, f"G10 guard missing from patched {size}"
+    pre_g10 = src.replace(g10_guard, "loop.index0 > ns_turn.last_user_idx")
+
+    import jinja2  # noqa: F401  (local, matches other synthetic-state tests)
+    from conftest import make_env
+
+    fixture = load_fixture("gemma4_history_tool_call_reasoning")
+    env = make_env()
+    ctx_base = {
+        "bos_token": "", "eos_token": "", "pad_token": "",
+        "add_generation_prompt": True, "add_vision_id": False, "tools": None,
+    }
+    pre_t = env.from_string(pre_g10)
+    cur_t = env.from_string(src)
+    for extra in ({}, {"preserve_thinking": False}):
+        ctx = {**ctx_base, **fixture, **extra}
+        assert pre_t.render(**ctx) == cur_t.render(**ctx), (
+            f"G10 changed default render on {size} (kwarg unset/false must be "
+            f"byte-identical to the pre-G10 state)."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
 # ---------------------------------------------------------------------------
 

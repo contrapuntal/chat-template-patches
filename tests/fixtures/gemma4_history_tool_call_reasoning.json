@@ -1,0 +1,13 @@
+{
+  "_applies_to": ["gemma4"],
+  "_description": "Reproduction fixture for G10 (Gemma 4 preserve_thinking). A HISTORICAL assistant tool-call turn carries `reasoning` (HIST_REASONING_MARKER) before the last user message; a CURRENT assistant tool-call turn carries reasoning (CUR_REASONING_MARKER) after it. Gemma renders the dedicated reasoning field as a `<|channel>thought` block only for the current-turn region (loop.index0 > last_user_idx), so the historical reasoning is dropped by default. With preserve_thinking=true, the historical tool-call reasoning is rendered too — curing the multi-step agentic arguments-collapse.",
+  "_bug": "earendil-works/pi#3325 (Qwen3.6 analog, = Q3.6-1); Gemma 4 reported in r/LocalLLaMA 12B tool-calling threads + Google PR HF disc #118 (unmerged).",
+  "messages": [
+    {"role": "user", "content": "Weather in SF and NYC?"},
+    {"role": "assistant", "reasoning": "HIST_REASONING_MARKER", "content": "", "tool_calls": [{"function": {"name": "get_weather", "arguments": {"city": "SF"}}}]},
+    {"role": "tool", "content": "SF: sunny, 72F"},
+    {"role": "user", "content": "now NYC"},
+    {"role": "assistant", "reasoning": "CUR_REASONING_MARKER", "content": "", "tool_calls": [{"function": {"name": "get_weather", "arguments": {"city": "NYC"}}}]}
+  ],
+  "add_generation_prompt": true
+}

@@ -46,6 +46,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | Q3.6-11 | Qwen3.6 | froggeric `max_tool_arg_chars` / `max_tool_response_chars` payload truncation | **catalog-only — NOT shipped** (lossy: silently drops tool arg/response content) | community-tracker (froggeric v20 **snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-8 | Qwen3.6 | froggeric forward-tracked `consecutive_failures` two-tier tool-error escalation (seed a `<think>` correction on 1st failure, out-of-band directive on 2nd+) | **watch** (NOT implemented; gated behind an eval — `tests/fixtures/qwen36_repeated_tool_failures.json` + `docs/evals/Q3.6-8-error-escalation.md`). **froggeric v18 now supplies the structural FP-detection the gate's false-positive cases demand** (`"error":`/`Exception:`/`Traceback`/`command not found`, not substrings); prefix-symmetry concern still open. | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v15/v16 → **v18/v20 snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-12 | Qwen3.6 | Accept Anthropic-style `message.thinking` reasoning payloads as an alternate reasoning source (Claude Code / Anthropic-compat clients) | **active** (shipped in default `patched/`; stacks on Q3.6-6) | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v21.1 **snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja`) | Qwen3.6-35B-A3B |
+| Q3.6-13 | Qwen3.6 | froggeric `tool_call_format="json"` kwarg — opt-in Hermes-JSON tool-call format (default stays native XML) | **opt-in** (ships a `.patch`, NOT in default `patched/`; parser-lock-in / grammar-shift — default XML path unchanged) | community-tracker (froggeric v21.3 **snapshotted**) | Qwen3.6-35B-A3B |
 | G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | community-ephemeral (Reddit thread) | Gemma 4 26B-A4B-it, 31B-it |
 | G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | community-tracker (asfbrz96 GitHub repo + aldegr gist; both **snapshotted** at `docs/sources/github-snapshots/asf0-...` and `docs/sources/gists/aldehir-...`) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
 | G3 | Gemma 4 | Apr 2026 official template realignment | **upstream** (Google HF + llama.cpp #21704 #21760) | publisher | Gemma 4 26B-A4B-it, 31B-it |
@@ -1154,6 +1155,42 @@ patched renders it inside `<think>…</think>`.
 - *Fix author:* mechanical port of froggeric's branch onto the Q3.6-6 stack.
 - *Template author:* Alibaba Cloud / Qwen Team.
 - *Provenance tier:* community-tracker.
+
+---
+
+### Q3.6-13 — Qwen3.6 `tool_call_format="json"` kwarg (opt-in, NOT shipped)
+
+**Target:** Qwen3.6-35B-A3B. **Status: opt-in** — ships a `.patch` in
+`patches/qwen3.6/`, **not** applied to the default `patched/35B-A3B.jinja`.
+**Diffs against the shipped default stack (through Q3.6-12).**
+
+**What it does.** froggeric v21.3 adds a `tool_call_format` kwarg (default
+`"xml"`). When set to `"json"`, tool calls render in Hermes-style JSON
+(`<tool_call>\n{"name": ..., "arguments": {...}}\n</tool_call>`) and the tool
+instructions in the `<IMPORTANT>` block switch to describe the JSON shape,
+instead of the native Qwen `<function=…>`/`<parameter=…>` XML.
+
+**Why opt-in, not shipped.** The native XML format is the model's training
+distribution and is what Qwen-native parsers expect (vLLM's `qwen3_coder` /
+`qwen3_xml`). Switching to JSON is a **parser-lock-in / grammar-shift** change:
+froggeric's own v21.1 changelog records that it **reverted** an earlier
+JSON-default experiment precisely because "JSON fundamentally broke vLLM's
+native `qwen3_coder` parser." Shipping JSON by default would degrade the
+dominant path; the repo keeps XML native (same stance as Q3.6-4's "why two
+grammars" and scope rule 3, no vendor lock-in).
+
+**Distinction from Q3.6-11.** Unlike Q3.6-11 (payload truncation), the JSON
+kwarg is **not lossy** — it re-serializes the same arguments in a different
+grammar and is default-off. That is why it ships as an opt-in `.patch` (like
+Q3.6-9/-10) rather than being catalog-only: a deployment stuck on a
+Hermes-JSON-only engine can apply it deliberately without touching the default
+XML render path. froggeric also auto-disables `max_tool_arg_chars` truncation
+in JSON mode (slicing a serialized JSON blob corrupts it) — noted here; this
+repo does not ship the truncation kwargs (Q3.6-11) at all.
+
+**Provenance.** froggeric v21.3 README + template (**snapshotted** at
+`docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja`).
+Provenance tier: community-tracker.
 
 ---
 

@@ -1,0 +1,90 @@
+From: chat-template-patches
+Subject: [Q3.6-13] Opt-in tool_call_format="json" (Hermes JSON tool calls)
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (shipped default stack:
+Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4 + Q3.6-5 + Q3.6-6 + Q3.6-12)
+
+Status: OPT-IN. This patch ships but is NOT applied to the default
+patched/35B-A3B.jinja. The native Qwen XML tool-call format
+(<function=...>/<parameter=...>) is the model's training distribution and
+is what Qwen-native parsers (vLLM qwen3_coder / qwen3_xml) expect. Apply
+this only for a deployment stuck on a Hermes-JSON-only engine.
+
+What it does: adds a `tool_call_format` kwarg (default "xml"). When set to
+"json", (a) the tool-instruction example + the <IMPORTANT> format bullet
+describe a single JSON object with "name"/"arguments" keys inside
+<tool_call></tool_call>, and (b) each assistant tool call serializes as
+`<tool_call>\n{"name": ..., "arguments": {...}}\n</tool_call>` instead of
+the XML <function=>/<parameter=> nesting. Mapping arguments are emitted via
+`| tojson`; non-empty string-form arguments pass through trimmed; missing,
+none, or whitespace-only arguments become `{}` (so the emitted object is
+always valid JSON).
+
+Default path unchanged: with the kwarg unset or "xml", the render is
+byte-identical to the pre-Q3.6-13 shipped template — verified across
+single / parallel / string-args tool calls and the tool-instruction block
+(see tests test_q36_13_*).
+
+Why opt-in, not shipped by default: froggeric's own v21.1 changelog records
+that it REVERTED an earlier JSON-default experiment because "JSON
+fundamentally broke vLLM's native qwen3_coder parser." Shipping JSON by
+default would degrade the dominant parser path. Unlike Q3.6-11 (payload
+truncation) this is NOT lossy — the same arguments are re-serialized in a
+different grammar and it is default-off — which is why it ships as an
+applyable .patch (like Q3.6-9 / Q3.6-10) rather than being catalog-only.
+
+Prior art: froggeric Qwen-Fixed-Chat-Templates v21.3, snapshotted at
+docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja.
+This port trims whitespace-only string args to {} (froggeric's form emits
+them raw, producing invalid JSON). Diffs against the shipped default stack
+(through Q3.6-12).
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -1,3 +1,4 @@
++{%- set _tool_format = tool_call_format if tool_call_format is defined else 'xml' %}
+ {%- set image_count = namespace(value=0) %}
+ {%- set video_count = namespace(value=0) %}
+ {%- macro render_content(content, do_vision_count, is_system_content=false) %}
+@@ -84,7 +85,12 @@
+         {{- tool | tojson }}
+     {%- endfor %}
+     {{- "\n</tools>" }}
++    {#- Q3.6-13 (opt-in): switch the tool-instruction example + <IMPORTANT> bullet to Hermes JSON when tool_call_format=='json'; XML (native) is the default and is byte-identical to the pre-Q3.6-13 state. -#}
++    {%- if _tool_format == 'json' %}
++    {{- '\n\nIf you choose to call a function ONLY reply in the following format with NO suffix:\n\n<tool_call>\n{"name": "example_function_name", "arguments": {"example_parameter_1": "value_1", "example_parameter_2": "This is the value for the second parameter"}}\n</tool_call>\n\n<IMPORTANT>\nReminder:\n- Function calls MUST follow the specified format: a single JSON object with "name" and "arguments" keys inside <tool_call></tool_call> XML tags\n- Required parameters MUST be specified\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\n</IMPORTANT>' }}
++    {%- else %}
+     {{- '\n\nIf you choose to call a function ONLY reply in the following format with NO suffix:\n\n<tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>\nvalue_1\n</parameter>\n<parameter=example_parameter_2>\nThis is the value for the second parameter\nthat can span\nmultiple lines\n</parameter>\n</function>\n</tool_call>\n\n<IMPORTANT>\nReminder:\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\n- Required parameters MUST be specified\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\n</IMPORTANT>' }}
++    {%- endif %}
+     {%- if merged_system %}
+         {{- '\n\n' + merged_system }}
+     {%- endif %}
+@@ -152,6 +158,20 @@
+                 {%- if tool_call.function is defined %}
+                     {%- set tool_call = tool_call.function %}
+                 {%- endif %}
++                {%- if _tool_format == 'json' %}
++                    {%- if not loop.first or content|trim %}
++                        {{- '\n\n' }}
++                    {%- endif %}
++                    {%- set _args = '{}' %}
++                    {%- if tool_call.arguments is defined and tool_call.arguments is not none %}
++                        {%- if tool_call.arguments is mapping %}
++                            {%- set _args = tool_call.arguments | tojson %}
++                        {%- elif tool_call.arguments is string and tool_call.arguments|trim %}
++                            {%- set _args = tool_call.arguments|trim %}
++                        {%- endif %}
++                    {%- endif %}
++                    {{- '<tool_call>\n{"name": ' }}{{- tool_call.name | tojson }}{{- ', "arguments": ' }}{{- _args }}{{- '}\n</tool_call>' }}
++                {%- else %}
+                 {%- if loop.first %}
+                     {%- if content|trim %}
+                         {{- '\n\n<tool_call>\n<function=' + tool_call.name + '>\n' }}
+@@ -176,6 +196,7 @@
+                     {%- endif %}
+                 {%- endif %}
+                 {{- '</function>\n</tool_call>' }}
++                {%- endif %}
+             {%- endfor %}
+         {%- endif %}
+         {{- '<|im_end|>\n' }}

@@ -1565,3 +1565,136 @@ def test_q36_12_default_byte_identical_for_non_thinking_inputs(template_pairs) -
                 f"Q3.6-12 changed the render of a non-`thinking` input "
                 f"({name}, extra={extra}) — it must be additive."
             )
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-13 — tool_call_format="json" (Hermes JSON tool calls, OPT-IN)
+# Ships a .patch but is NOT applied to the shipped patched/35B-A3B.jinja.
+# ---------------------------------------------------------------------------
+
+Q36_13_PATCH = REPO_ROOT / "patches" / "qwen3.6" / "Q3.6-13-tool-call-format-json.patch"
+
+
+def _apply_additive_patch(base_src: str, patch_path) -> str:
+    """Apply the SHIPPED unified-diff .patch to a single-file base in pure Python
+    (no external `patch` binary, no temp dir — portable, and still validates the
+    real patch file so staleness is caught). Q3.6-13 is purely additive, so each
+    hunk's context block is reconstructed and the additions spliced in by a
+    unique-context replace."""
+    out = base_src
+    lines = patch_path.read_text().splitlines(keepends=True)
+    i = 0
+    while i < len(lines) and not lines[i].startswith("@@"):
+        i += 1
+    while i < len(lines):
+        i += 1  # skip the @@ header
+        before, after = [], []
+        while i < len(lines) and lines[i][:1] in (" ", "+", "-"):
+            tag, body = lines[i][0], lines[i][1:]
+            if tag in (" ", "-"):
+                before.append(body)
+            if tag in (" ", "+"):
+                after.append(body)
+            i += 1
+        b, a = "".join(before), "".join(after)
+        assert out.count(b) == 1, f"Q3.6-13 patch context not unique/found:\n{b!r}"
+        out = out.replace(b, a, 1)
+        while i < len(lines) and not lines[i].startswith("@@"):
+            i += 1
+    return out
+
+
+def test_q36_13_not_applied_to_shipped_template(template_pairs) -> None:
+    """Opt-in invariant: the shipped patched template must NOT carry the
+    tool_call_format switch — the default stays native XML."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    src = pair.patched.read_text()
+    assert "tool_call_format" not in src and "_tool_format" not in src, (
+        "Q3.6-13 leaked into the shipped patched template — if it was promoted "
+        "to active, update the catalog and this test; otherwise revert."
+    )
+
+
+def test_q36_13_patch_applies_and_default_is_byte_identical(template_pairs) -> None:
+    """The shipped .patch must apply cleanly to the current default stack, and
+    with the kwarg unset or 'xml' the applied template renders byte-identical
+    to the shipped one (opt-in must not touch the default XML path)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    assert Q36_13_PATCH.is_file(), f"Q3.6-13 patch missing at {Q36_13_PATCH}"
+    src = pair.patched.read_text()
+    applied = _apply_additive_patch(src, Q36_13_PATCH)
+    assert "_tool_format" in applied, "Q3.6-13 patch did not introduce the kwarg"
+    convs = {
+        "single": [
+            {"role": "user", "content": "SF?"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"function": {"name": "get_weather", "arguments": {"city": "SF"}}}]},
+            {"role": "tool", "content": "sunny"}, {"role": "user", "content": "thx"}],
+        "parallel": [
+            {"role": "user", "content": "SF and NYC?"},
+            {"role": "assistant", "content": "on it", "tool_calls": [
+                {"function": {"name": "w", "arguments": {"c": "SF"}}},
+                {"function": {"name": "w", "arguments": {"c": "NYC"}}}]}],
+    }
+    for name, msgs in convs.items():
+        for extra in ({}, {"tool_call_format": "xml"}):
+            assert _render_str(src, {"messages": msgs, **extra}) == \
+                   _render_str(applied, {"messages": msgs, **extra}), (
+                f"Q3.6-13 changed the default XML render ({name}, extra={extra})"
+            )
+
+
+def test_q36_13_json_mode_emits_hermes_shape(template_pairs) -> None:
+    """With tool_call_format='json' applied, tool calls serialize as a single
+    JSON object inside <tool_call> and the XML <function=>/<parameter=> form is
+    gone (both in the instruction block and the assistant turn)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    applied = _apply_additive_patch(pair.patched.read_text(), Q36_13_PATCH)
+    TOOLS = [{"type": "function", "function": {
+        "name": "get_weather",
+        "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}}}]
+    msgs = [
+        {"role": "user", "content": "SF?"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "get_weather", "arguments": {"city": "SF"}}}]},
+    ]
+    out = _render_str(applied, {"messages": msgs, "tools": TOOLS, "tool_call_format": "json"})
+    assert '<tool_call>\n{"name": "get_weather", "arguments": {"city": "SF"}}\n</tool_call>' in out, out
+    assert "<function=get_weather>" not in out, "json mode still emitted XML tool call"
+    assert '{"name": "example_function_name"' in out, "json instruction example missing"
+    assert "<function=example_function_name>" not in out, "XML instruction example leaked in json mode"
+    # string-form arguments pass through verbatim in json mode
+    msgs_s = [
+        {"role": "user", "content": "SF?"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "w", "arguments": '{"c": "SF"}'}}]},
+    ]
+    out_s = _render_str(applied, {"messages": msgs_s, "tool_call_format": "json"})
+    assert '"arguments": {"c": "SF"}}' in out_s, out_s
+    # Every emitted tool_call body must be VALID JSON — in particular a
+    # whitespace-only string `arguments` must fall back to {} (froggeric's form
+    # emits it raw, producing invalid JSON).
+    import json
+    import re
+    for args, expect in [
+        ({"city": "SF"}, {"name": "w", "arguments": {"city": "SF"}}),
+        ('{"c": "SF"}', {"name": "w", "arguments": {"c": "SF"}}),
+        ("   \n\t ", {"name": "w", "arguments": {}}),
+        (None, {"name": "w", "arguments": {}}),
+    ]:
+        msgs_v = [
+            {"role": "user", "content": "x"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"function": {"name": "w", "arguments": args}}]},
+        ]
+        out_v = _render_str(applied, {"messages": msgs_v, "tool_call_format": "json"})
+        body = re.search(r"<tool_call>\n(.*?)\n</tool_call>", out_v, re.S).group(1)
+        assert json.loads(body) == expect, (
+            f"Q3.6-13 emitted invalid/wrong JSON for arguments={args!r}: {body!r}"
+        )

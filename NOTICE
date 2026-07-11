@@ -346,6 +346,15 @@ Q3.6-12 (Qwen3.6 Anthropic-style message.thinking reasoning support) — ACTIVE
     Alibaba Cloud / Qwen Team. Active; shipped in patched/35B-A3B.jinja.
     Additive — byte-identical for all non-`thinking` inputs.
 
+Q3.6-13 (Qwen3.6 tool_call_format="json" Hermes JSON tool calls) — OPT-IN
+  Prior art : froggeric (Qwen-Fixed-Chat-Templates v21.3) tool_call_format
+    kwarg. Snapshotted at
+    docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja.
+  Template author : Alibaba Cloud / Qwen Team. Opt-in, default "xml" (native);
+    ships patches/qwen3.6/Q3.6-13-tool-call-format-json.patch, NOT applied to
+    patched/. Parser-lock-in escape hatch; froggeric itself reverted a
+    JSON-default experiment that broke vLLM's qwen3_coder (v21.1).
+
 G1 (Gemma 4 `is sequence` minijinja crash)
   Reporter : u/Reaper_9382, r/LocalLLaMA "Fix Gemma 4 MCP tool calls
     broken in LM Studio" (Apr 2026).

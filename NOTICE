@@ -338,6 +338,14 @@ Q3.6-11 (Qwen3.6 tool-payload truncation) — CATALOG-ONLY, NOT SHIPPED
     tool content); context budgeting belongs in the runtime. Documented in
     docs/PATCH-CATALOG.md for completeness.
 
+Q3.6-12 (Qwen3.6 Anthropic-style message.thinking reasoning support) — ACTIVE
+  Prior art : froggeric (Qwen-Fixed-Chat-Templates v21.1) added the
+    message.thinking reasoning branch. Snapshotted at
+    docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja.
+  Fix author : mechanical port onto the Q3.6-6 stack. Template author:
+    Alibaba Cloud / Qwen Team. Active; shipped in patched/35B-A3B.jinja.
+    Additive — byte-identical for all non-`thinking` inputs.
+
 G1 (Gemma 4 `is sequence` minijinja crash)
   Reporter : u/Reaper_9382, r/LocalLLaMA "Fix Gemma 4 MCP tool calls
     broken in LM Studio" (Apr 2026).

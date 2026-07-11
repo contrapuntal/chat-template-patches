@@ -1,0 +1,63 @@
+From: chat-template-patches
+Subject: [Q3.6-12] Accept Anthropic-style `message.thinking` reasoning payloads
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (state after Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4 + Q3.6-5 + Q3.6-6 applied)
+
+Anthropic-compat clients (Claude Code and other harnesses that speak the
+Anthropic Messages shape) carry a turn's reasoning in `message.thinking`
+rather than Qwen's native `message.reasoning_content`. Qwen3.6's upstream
+template only reads `reasoning_content` (upstream line 94), so an assistant
+history turn whose reasoning arrived as `message.thinking` is rendered with
+its reasoning silently dropped — the same class of history-amnesia the
+Q3.6-1/Q3.6-2 family fixes for the Qwen-native field, but for the
+Anthropic-format field.
+
+Fix: add an `elif` branch to the reasoning-content sourcing that reads
+`message.thinking` when it is a STRING (and `message.reasoning_content` is
+not a string):
+
+    {%- elif message.thinking is string %}
+        {%- set reasoning_content = message.thinking %}
+
+Precedence and regression safety:
+
+  - The Qwen-native `message.reasoning_content` branch stays first, so a
+    string `reasoning_content` wins over `message.thinking`. (A NON-string
+    `reasoning_content` is not honored by upstream either — upstream's
+    `is string` guard falls through to content extraction — so it is out of
+    scope here.)
+  - String-only. A non-string `message.thinking` (list / dict / Anthropic
+    content-block list) is deliberately IGNORED rather than coerced:
+    `| string` would emit a Python repr (leaking e.g. thinking-block
+    `signature` metadata into the prompt) and, for `[]` / `{}`, produce a
+    truthy value that defeats Q3.6-2's empty-reasoning guard (an empty
+    `<think>` wrapper). This is a deliberate divergence from froggeric v21.1,
+    which coerces with `| string`.
+  - The branch fires only when `reasoning_content` is not a string AND
+    `message.thinking` is a string, so every other input (the dominant case,
+    plus non-string `thinking`) renders byte-identically to the Q3.6-6 state.
+  - The populated `reasoning_content` is `| trim`-ed downstream and gated by
+    Q3.6-2's `and reasoning_content` guard, so an empty/whitespace `thinking`
+    string emits no `<think>` wrapper.
+
+Prior art: froggeric's `Qwen-Fixed-Chat-Templates` v21.1 added a
+`message.thinking` branch ("Anthropic message.thinking" in its changelog),
+snapshotted at
+docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja.
+This port is string-only where froggeric coerces (see above).
+
+Stacks on Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4 + Q3.6-5 + Q3.6-6. Diff is
+against the Q3.6-6-applied state. Part of the shipped default stack.
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -129,6 +129,9 @@
+         {%- set reasoning_content = '' %}
+         {%- if message.reasoning_content is string %}
+             {%- set reasoning_content = message.reasoning_content %}
++        {#- Q3.6-12: accept Anthropic-style `message.thinking` reasoning payloads (Claude Code / Anthropic-compat clients) as an alternate reasoning source, but ONLY when it is a string. The Qwen-native string `reasoning_content` still wins (its branch is first). A non-string `message.thinking` (list / dict / Anthropic content-block) is deliberately ignored — coercing it with `| string` would emit a Python repr (leaking e.g. block `signature` metadata) and, for `[]`/`{}`, defeat the empty-reasoning guard by producing a truthy wrapper. Non-`thinking` and non-string-`thinking` inputs render byte-identically to the Q3.6-6 state. -#}
++        {%- elif message.thinking is string %}
++            {%- set reasoning_content = message.thinking %}
+         {%- else %}
+             {%- if '</think>' in content %}
+                 {%- set reasoning_content = content.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}

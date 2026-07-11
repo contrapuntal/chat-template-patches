@@ -45,6 +45,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | Q3.6-10 | Qwen3.6 | `auto_disable_thinking_with_tools` kwarg (default OFF) — force thinking off when tools present (P7-analog prevention; sentinels still override) | **opt-in** (ships a `.patch`, not in default `patched/`; alternative to Q3.6-3 recovery) | community-tracker (froggeric v20 **snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-11 | Qwen3.6 | froggeric `max_tool_arg_chars` / `max_tool_response_chars` payload truncation | **catalog-only — NOT shipped** (lossy: silently drops tool arg/response content) | community-tracker (froggeric v20 **snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-8 | Qwen3.6 | froggeric forward-tracked `consecutive_failures` two-tier tool-error escalation (seed a `<think>` correction on 1st failure, out-of-band directive on 2nd+) | **watch** (NOT implemented; gated behind an eval — `tests/fixtures/qwen36_repeated_tool_failures.json` + `docs/evals/Q3.6-8-error-escalation.md`). **froggeric v18 now supplies the structural FP-detection the gate's false-positive cases demand** (`"error":`/`Exception:`/`Traceback`/`command not found`, not substrings); prefix-symmetry concern still open. | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v15/v16 → **v18/v20 snapshotted**) | Qwen3.6-35B-A3B |
+| Q3.6-12 | Qwen3.6 | Accept Anthropic-style `message.thinking` reasoning payloads as an alternate reasoning source (Claude Code / Anthropic-compat clients) | **active** (shipped in default `patched/`; stacks on Q3.6-6) | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v21.1 **snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja`) | Qwen3.6-35B-A3B |
 | G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | community-ephemeral (Reddit thread) | Gemma 4 26B-A4B-it, 31B-it |
 | G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | community-tracker (asfbrz96 GitHub repo + aldegr gist; both **snapshotted** at `docs/sources/github-snapshots/asf0-...` and `docs/sources/gists/aldehir-...`) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
 | G3 | Gemma 4 | Apr 2026 official template realignment | **upstream** (Google HF + llama.cpp #21704 #21760) | publisher | Gemma 4 26B-A4B-it, 31B-it |
@@ -1090,6 +1091,69 @@ deliberate decision; revisit only if a non-lossy, clearly-marked form emerges.
 
 **Provenance.** froggeric v20 README + template (**snapshotted**); no `.patch`
 ships. Provenance tier: community-tracker.
+
+---
+
+### Q3.6-12 — Qwen3.6 Anthropic-style `message.thinking` reasoning support
+
+**Target:** Qwen3.6-35B-A3B. **Status: active** — shipped in the default
+`patched/` stack. **Stacks on Q3.6-1 … Q3.6-6.**
+
+**Failure mode.** Anthropic-compat clients (Claude Code and other harnesses
+speaking the Anthropic Messages shape) carry a turn's reasoning in
+`message.thinking` rather than Qwen's native `message.reasoning_content`.
+Qwen3.6's upstream template reads only `reasoning_content` (upstream line 94),
+so an assistant history turn whose reasoning arrived as `message.thinking` is
+rendered with its reasoning silently dropped — the same history-amnesia class
+Q3.6-1/Q3.6-2 fix for the Qwen-native field, but for the Anthropic-format
+field. This matters for exactly the agentic clients this repo already targets
+(cf. P10 `developer`-role support).
+
+**Fix.** Add an `elif` branch to the reasoning-content sourcing (between the
+`reasoning_content is string` branch and the `</think>`-extraction fallback),
+gated on `is string`:
+```jinja
+{%- elif message.thinking is string %}
+    {%- set reasoning_content = message.thinking %}
+```
+
+**Precedence & regression safety.**
+- The Qwen-native `reasoning_content` branch stays **first**, so a **string**
+  `reasoning_content` wins over `message.thinking`
+  (`test_q36_12_reasoning_content_wins_over_thinking`). A **non-string**
+  `reasoning_content` is not honored by upstream either (upstream's `is string`
+  guard falls through to content extraction), so it is out of scope.
+- **String-only.** A non-string `message.thinking` (list / dict / Anthropic
+  content-block list) is deliberately **ignored**, not coerced. `| string`
+  would emit a Python repr — leaking e.g. thinking-block `signature` metadata —
+  and, for `[]` / `{}`, produce a truthy value that defeats Q3.6-2's
+  empty-reasoning guard (an empty `<think>` wrapper). **Deliberate divergence
+  from froggeric v21.1**, which coerces with `| string`. Pinned by
+  `test_q36_12_non_string_thinking_is_ignored` (surfaced during the review of
+  the initial coercing port).
+- The branch fires **only** when `reasoning_content` is not a string AND
+  `message.thinking` **is a string**, so every other input (the dominant case,
+  plus non-string `thinking`) renders **byte-identically** to the Q3.6-6 state.
+  Pinned by `test_q36_12_default_byte_identical_for_non_thinking_inputs`.
+- Populated reasoning is `| trim`-ed downstream and gated by Q3.6-2's
+  `and reasoning_content` guard, so a whitespace-only `thinking` string emits
+  **no** `<think>` wrapper (`test_q36_12_empty_thinking_emits_no_wrapper`) —
+  consistent with the empty-`reasoning_content` case.
+
+**Verification fixture.** `tests/fixtures/qwen36_message_thinking_reasoning.json`
+— a history assistant turn carrying reasoning in `thinking`, with
+`preserve_thinking=true` forced so the marker's absence isolates the
+message.thinking non-handling from history pruning. Upstream drops the marker;
+patched renders it inside `<think>…</think>`.
+
+**Attribution.**
+- *Reporter / prior art:* froggeric (HuggingFace) —
+  `Qwen-Fixed-Chat-Templates` v21.1 added the same `message.thinking` branch
+  ("Anthropic message.thinking" in its changelog). **Snapshotted** at
+  `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja`.
+- *Fix author:* mechanical port of froggeric's branch onto the Q3.6-6 stack.
+- *Template author:* Alibaba Cloud / Qwen Team.
+- *Provenance tier:* community-tracker.
 
 ---
 

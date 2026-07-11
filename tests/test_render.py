@@ -1366,3 +1366,202 @@ def test_q36_10_when_applied_disables_thinking_with_tools(template_pairs) -> Non
         "messages": [{"role": "system", "content": "x<|think_on|>"}, {"role": "user", "content": "hi"}],
         "tools": TOOLS, "auto_disable_thinking_with_tools": True})
     assert _gen_tail(out).endswith("<think>\n"), f"<|think_on|> should override auto_disable:\n{out!r}"
+
+
+# ---------------------------------------------------------------------------
+# Q3.6-12 — Qwen3.6 Anthropic-style message.thinking reasoning support (ACTIVE)
+# ---------------------------------------------------------------------------
+
+# The Q3.6-12 elif branch, kept verbatim so the byte-identical regression test
+# can synthesize the pre-Q3.6-12 state by removing it.
+Q36_12_ELIF_BLOCK = (
+    "        {#- Q3.6-12: accept Anthropic-style `message.thinking` reasoning "
+    "payloads (Claude Code / Anthropic-compat clients) as an alternate reasoning "
+    "source, but ONLY when it is a string. The Qwen-native string "
+    "`reasoning_content` still wins (its branch is first). A non-string "
+    "`message.thinking` (list / dict / Anthropic content-block) is deliberately "
+    "ignored — coercing it with `| string` would emit a Python repr (leaking e.g. "
+    "block `signature` metadata) and, for `[]`/`{}`, defeat the empty-reasoning "
+    "guard by producing a truthy wrapper. Non-`thinking` and non-string-`thinking` "
+    "inputs render byte-identically to the Q3.6-6 state. -#}\n"
+    "        {%- elif message.thinking is string %}\n"
+    "            {%- set reasoning_content = message.thinking %}\n"
+)
+
+
+def test_q36_12_upstream_drops_message_thinking(template_pairs) -> None:
+    """Confirm the failure mode: upstream Qwen3.6 only reads
+    `message.reasoning_content`, so a turn whose reasoning arrives in the
+    Anthropic-shape `thinking` field is dropped. The fixture forces
+    `preserve_thinking=true`, so upstream WOULD render a `<think>` wrapper if it
+    had reasoning — the marker's absence isolates the non-handling of
+    `message.thinking` (not history pruning)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    fixture = load_fixture("qwen36_message_thinking_reasoning")
+    out = render(pair.upstream, fixture)
+    assert "ANTHROPIC_THINKING_MARKER" not in out, (
+        "upstream Qwen3.6 unexpectedly rendered `message.thinking` reasoning — "
+        "Q3.6-12 may already be present upstream; update catalog status.\n"
+        f"Output:\n{out!r}"
+    )
+
+
+def test_q36_12_patched_renders_message_thinking(template_pairs) -> None:
+    """With Q3.6-12, the assistant turn's `message.thinking` payload is sourced
+    as reasoning_content and rendered inside a `<think>` block."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    fixture = load_fixture("qwen36_message_thinking_reasoning")
+    out = render(pair.patched, fixture)
+    assert "ANTHROPIC_THINKING_MARKER" in out, (
+        f"Q3.6-12 broken — `message.thinking` reasoning was dropped.\n{out!r}"
+    )
+    asst = _assistant_turn(out)
+    think_pos = asst.find("<think>")
+    close_pos = asst.find("</think>", think_pos + 1)
+    marker_pos = asst.find("ANTHROPIC_THINKING_MARKER")
+    assert 0 <= think_pos < marker_pos < close_pos, (
+        "Q3.6-12 broken — `message.thinking` marker not wrapped inside the "
+        f"<think>...</think> block. Assistant turn:\n{asst!r}"
+    )
+
+
+def test_q36_12_reasoning_content_wins_over_thinking(template_pairs) -> None:
+    """Precedence: when BOTH `reasoning_content` (Qwen-native) and `thinking`
+    (Anthropic) are present on the same turn, the native field wins — the
+    `thinking` marker must not appear."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    payload = {
+        "messages": [
+            {"role": "user", "content": "Hi"},
+            {
+                "role": "assistant",
+                "content": "Hello",
+                "reasoning_content": "NATIVE_REASONING_MARKER",
+                "thinking": "ANTHROPIC_THINKING_MARKER",
+            },
+            {"role": "user", "content": "More"},
+        ],
+        "preserve_thinking": True,
+        "add_generation_prompt": True,
+    }
+    out = render(pair.patched, payload)
+    assert "NATIVE_REASONING_MARKER" in out, (
+        f"Q3.6-12 broke the reasoning_content path.\n{out!r}"
+    )
+    assert "ANTHROPIC_THINKING_MARKER" not in out, (
+        "Q3.6-12 broken — `message.thinking` overrode the Qwen-native "
+        f"`reasoning_content`; native must win.\n{out!r}"
+    )
+
+
+def test_q36_12_empty_thinking_emits_no_wrapper(template_pairs) -> None:
+    """Q3.6-2 interaction: a whitespace-only `thinking` payload must NOT emit an
+    empty `<think>\\n\\n</think>` wrapper on the history turn (the reasoning is
+    `| trim`-ed and gated by Q3.6-2's `and reasoning_content` guard)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    payload = {
+        "messages": [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello", "thinking": "   \n  "},
+            {"role": "user", "content": "More"},
+        ],
+        "preserve_thinking": True,
+        "add_generation_prompt": True,
+    }
+    out = render(pair.patched, payload)
+    # Only the generation-prompt <think> should remain (history turn emits none).
+    assert out.count("<think>") == 1, (
+        f"Q3.6-12 broken — empty `thinking` emitted a stray <think> wrapper.\n{out!r}"
+    )
+    assert "<think>\n\n</think>" not in out, (
+        f"Q3.6-12 broken — empty `thinking` emitted an empty wrapper.\n{out!r}"
+    )
+
+
+def test_q36_12_non_string_thinking_is_ignored(template_pairs) -> None:
+    """Non-string `message.thinking` (list / dict / Anthropic content-block) must
+    be IGNORED, not coerced: no Python repr leaks into the prompt and no
+    `<think>` wrapper is emitted (an empty `[]`/`{}` must not become a truthy
+    wrapper that defeats Q3.6-2's guard)."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    cases = [
+        [],
+        {},
+        ["NONSTRING_THINKING_MARKER"],
+        [{"type": "thinking", "thinking": "T", "signature": "SIG_MUST_NOT_LEAK"}],
+    ]
+    for thinking in cases:
+        payload = {
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "ok", "thinking": thinking},
+                {"role": "user", "content": "next"},
+            ],
+            "preserve_thinking": True,
+            "add_generation_prompt": True,
+        }
+        out = render(pair.patched, payload)
+        # Only the generation-prompt <think> should remain (history turn: none).
+        assert out.count("<think>") == 1, (
+            f"Q3.6-12 emitted a stray <think> for non-string thinking={thinking!r}\n{out!r}"
+        )
+        assert "<think>\n\n</think>" not in out, (
+            f"Q3.6-12 emitted an empty wrapper for thinking={thinking!r}\n{out!r}"
+        )
+        for leak in ("NONSTRING_THINKING_MARKER", "SIG_MUST_NOT_LEAK", "'type':", "[]", "{}"):
+            assert leak not in out, (
+                f"Q3.6-12 leaked a coerced repr ({leak!r}) for thinking={thinking!r}\n{out!r}"
+            )
+
+
+def test_q36_12_default_byte_identical_for_non_thinking_inputs(template_pairs) -> None:
+    """Regression: Q3.6-12 is additive. Synthesize the pre-Q3.6-12 state by
+    removing the elif block, then assert byte-identical renders for
+    conversations that carry NO `thinking` field (mapping-args, string-args,
+    reasoning_content, and plain multi-turn). Proves zero behaviour change on
+    every non-`thinking` input."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    src = pair.patched.read_text()
+    assert Q36_12_ELIF_BLOCK in src, (
+        "Q3.6-12 elif block not found verbatim in the shipped template — the "
+        "byte-identical synthesis is stale; update Q36_12_ELIF_BLOCK."
+    )
+    pre_q36_12 = src.replace(Q36_12_ELIF_BLOCK, "")
+    assert pre_q36_12 != src
+
+    convs = {
+        "reasoning_content": [
+            {"role": "user", "content": "2+2?"},
+            {"role": "assistant", "content": "4", "reasoning_content": "arith"},
+            {"role": "user", "content": "3+3?"},
+        ],
+        "plain-multiturn": [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello"},
+            {"role": "user", "content": "More"},
+        ],
+        "tool-call": [
+            {"role": "user", "content": "SF?"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"function": {"name": "w", "arguments": {"c": "SF"}}}]},
+            {"role": "tool", "content": "SF sunny"},
+            {"role": "user", "content": "thanks"},
+        ],
+    }
+    for name, msgs in convs.items():
+        for extra in ({}, {"preserve_thinking": True}, {"preserve_thinking": False}):
+            payload = {"messages": msgs, **extra}
+            assert _render_str(src, payload) == _render_str(pre_q36_12, payload), (
+                f"Q3.6-12 changed the render of a non-`thinking` input "
+                f"({name}, extra={extra}) — it must be additive."
+            )

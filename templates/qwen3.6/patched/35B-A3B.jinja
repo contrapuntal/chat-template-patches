@@ -129,6 +129,9 @@
         {%- set reasoning_content = '' %}
         {%- if message.reasoning_content is string %}
             {%- set reasoning_content = message.reasoning_content %}
+        {#- Q3.6-12: accept Anthropic-style `message.thinking` reasoning payloads (Claude Code / Anthropic-compat clients) as an alternate reasoning source, but ONLY when it is a string. The Qwen-native string `reasoning_content` still wins (its branch is first). A non-string `message.thinking` (list / dict / Anthropic content-block) is deliberately ignored — coercing it with `| string` would emit a Python repr (leaking e.g. block `signature` metadata) and, for `[]`/`{}`, defeat the empty-reasoning guard by producing a truthy wrapper. Non-`thinking` and non-string-`thinking` inputs render byte-identically to the Q3.6-6 state. -#}
+        {%- elif message.thinking is string %}
+            {%- set reasoning_content = message.thinking %}
         {%- else %}
             {%- if '</think>' in content %}
                 {%- set reasoning_content = content.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}

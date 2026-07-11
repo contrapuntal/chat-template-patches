@@ -1,0 +1,16 @@
+{
+  "_applies_to": ["qwen3.6"],
+  "_description": "Reproduction fixture for Q3.6-12 (Qwen3.6 Anthropic-style message.thinking reasoning support). An assistant history turn carries its reasoning in the Anthropic-shape `thinking` field instead of Qwen's native `reasoning_content`. `preserve_thinking` is forced true so the ONLY reason the reasoning could be dropped is non-handling of `message.thinking` (isolating this from the Q3.6-1 history-preservation flip): upstream reads only `reasoning_content` and drops the marker (emitting an empty <think> wrapper); the Q3.6-12 patched template sources the reasoning from `message.thinking` and renders it.",
+  "_bug": "froggeric Qwen-Fixed-Chat-Templates v21.1 (Anthropic message.thinking); snapshot docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja",
+  "messages": [
+    {"role": "user", "content": "What is 2+2?"},
+    {
+      "role": "assistant",
+      "content": "4",
+      "thinking": "ANTHROPIC_THINKING_MARKER: 2+2 is basic arithmetic; the answer is 4."
+    },
+    {"role": "user", "content": "What about 3+3?"}
+  ],
+  "preserve_thinking": true,
+  "add_generation_prompt": true
+}

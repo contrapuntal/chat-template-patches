@@ -34,7 +34,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | R3 | Qwen3.5 | P5 sentinel hardening (`<\|think_off\|>`) + `ns_flags` simplification | **active** (revision of P5) | community-ephemeral (Reddit thread comments) | All Qwen3.5 |
 | P11 | Qwen3.5 | Auto-close unclosed `<think>` before `<tool_call>` | **deferred** (Qwen3.5 patched/ empty; ship alongside other Qwen3.5 patches) | community-tracker (allanchan339 — Qwen3.6 originator; not yet ported back to Qwen3.5) | All Qwen3.5 (only when P7 not also applied — P7 prevents this failure mode entirely by disabling thinking when tools defined) |
 | P12 | Qwen3.5 | Remove Python-only `\|items` filter from tool-call argument iteration | **deferred** (Qwen3.5 patched/ empty) | derived (verified by inspection of `templates/qwen3.5/upstream/35B-A3B.jinja` line 120) | All Qwen3.5 — minijinja and other C++-runtime Jinja implementations that don't support the `\|items` filter (Qwen3.6 doesn't use it; only Qwen3.5 affected) |
-| Q3.6-1 | Qwen3.6 | `preserve_thinking` default-on flip | **active** (LM Studio MLX path); **upstream-equivalent** in oMLX (auto-set server-side) | derived (bug report: community-ephemeral Reddit; cross-runtime fix at upstream-tracker `jundot/omlx#814`) | Qwen3.6-35B-A3B |
+| Q3.6-1 | Qwen3.6 | `preserve_thinking` default-on flip | **active** (LM Studio MLX path); **upstream-equivalent** in oMLX (auto-set server-side). **Convergence: froggeric v21.3 template now also defaults `preserve_thinking` ON** (its v20 template still shipped `else false` despite the v19 README claim) — independent corroboration. | derived (bug report: community-ephemeral Reddit; cross-runtime fix at upstream-tracker `jundot/omlx#814`) | Qwen3.6-35B-A3B |
 | Q3.6-2 | Qwen3.6 | `and reasoning_content` guard on history `<think>` emission (R1 port; stacks on Q3.6-1) | **active** | upstream-tracker (HF discussion threads on Qwen3.5 publisher repos by latent-variable, applied analogously to Qwen3.6) | Qwen3.6-35B-A3B |
 | Q3.6-3 | Qwen3.6 | Auto-close unclosed `<think>` before `<tool_call>` + recognize `</thinking>` hallucination as valid close (stacks on Q3.6-2) | **active** | community-tracker (allanchan339 GH for auto-close + froggeric HF for `</thinking>` recognition; merged form by fakezeta in r/LocalLLaMA `1t4cev0` — all three **snapshotted** in `docs/sources/`) | Qwen3.6-35B-A3B |
 | Q3.6-4 | Qwen3.6 | Tool-call string-argument passthrough (R2 port; stacks on Q3.6-3) | **active** | community-tracker (barubary's Fix 9 for Qwen3.5; same pattern applied to Qwen3.6) | Qwen3.6-35B-A3B |
@@ -44,7 +44,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | Q3.6-9 | Qwen3.6 | Replace `loop.previtem`/`loop.nextitem` with explicit `messages[loop.index0 ± 1]` indexing in the tool-response block | **opt-in** (minija / older C++ runtimes; ships a `.patch`, not in default `patched/` — like P4/P12/G1; byte-identical under jinja2) | community-tracker (froggeric v18 **snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-10 | Qwen3.6 | `auto_disable_thinking_with_tools` kwarg (default OFF) — force thinking off when tools present (P7-analog prevention; sentinels still override) | **opt-in** (ships a `.patch`, not in default `patched/`; alternative to Q3.6-3 recovery) | community-tracker (froggeric v20 **snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-11 | Qwen3.6 | froggeric `max_tool_arg_chars` / `max_tool_response_chars` payload truncation | **catalog-only — NOT shipped** (lossy: silently drops tool arg/response content) | community-tracker (froggeric v20 **snapshotted**) | Qwen3.6-35B-A3B |
-| Q3.6-8 | Qwen3.6 | froggeric forward-tracked `consecutive_failures` two-tier tool-error escalation (seed a `<think>` correction on 1st failure, out-of-band directive on 2nd+) | **watch** (NOT implemented; gated behind an eval — `tests/fixtures/qwen36_repeated_tool_failures.json` + `docs/evals/Q3.6-8-error-escalation.md`). **froggeric v18 now supplies the structural FP-detection the gate's false-positive cases demand** (`"error":`/`Exception:`/`Traceback`/`command not found`, not substrings); prefix-symmetry concern still open. | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v15/v16 → **v18/v20 snapshotted**) | Qwen3.6-35B-A3B |
+| Q3.6-8 | Qwen3.6 | froggeric forward-tracked `consecutive_failures` two-tier tool-error escalation (seed a `<think>` correction on 1st failure, out-of-band directive on 2nd+) | **watch** (NOT implemented; gated behind an eval — `tests/fixtures/qwen36_repeated_tool_failures.json` + `docs/evals/Q3.6-8-error-escalation.md`). **froggeric v18 now supplies the structural FP-detection the gate's false-positive cases demand** (`"error":`/`Exception:`/`Traceback`/`command not found`, not substrings); **v21.1 further scopes detection to the first 80 chars of the tool response + adds `err!`/`fatal:`** — de-risks FP concern #1; prefix-symmetry concern #2 still open. | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v15/v16 → **v18/v20/v21.3 snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-12 | Qwen3.6 | Accept Anthropic-style `message.thinking` reasoning payloads as an alternate reasoning source (Claude Code / Anthropic-compat clients) | **active** (shipped in default `patched/`; stacks on Q3.6-6) | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v21.1 **snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja`) | Qwen3.6-35B-A3B |
 | Q3.6-13 | Qwen3.6 | froggeric `tool_call_format="json"` kwarg — opt-in Hermes-JSON tool-call format (default stays native XML) | **opt-in** (ships a `.patch`, NOT in default `patched/`; parser-lock-in / grammar-shift — default XML path unchanged) | community-tracker (froggeric v21.3 **snapshotted**) | Qwen3.6-35B-A3B |
 | G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | community-ephemeral (Reddit thread) | Gemma 4 26B-A4B-it, 31B-it |
@@ -627,6 +627,22 @@ content (no `</think>`). The harness asserts:
 sibling for Qwen3.5 — deferred because qwen3.5 currently has no
 patched/ template. See P11 entry above.
 
+**Watch — froggeric v21.1 think-close anchoring (NOT adopted).** Our
+reasoning_content extraction (patched lines ~133-140) detects the think-close
+with `'</think>' in content` / `'</thinking>' in content` (substring, anywhere).
+froggeric v21.1 changed its own extractor to `content.startswith('</think>')`
+/ `'\n</think>' in content` (newline-anchored) to fix "history corruption when
+the assistant quotes `</think>`" — e.g. a historical turn whose content quotes
+the literal tag mid-line would mis-split and silently drop the text before it.
+This is a **real edge-case bug in our shipped extractor**, but the anchored form
+is only a *partial* fix (it can itself regress a turn whose reasoning
+legitimately ends on a standalone `</think>`-like line), so per the eval-gate
+discipline it is **not** promoted to the default. Recorded as a watch item;
+adopt only behind a fixture that pins both the quoted-tag case and the
+standalone-line case. froggeric v21.1 also carries malformed-close spellings
+(`\n</ think>` / `\n</think >`) our Q3.6-3 does not recognize — same watch.
+(Surfaced by the 2026-07-10 froggeric v20→v21.3 source-sweep + Codex review.)
+
 ---
 
 ### Q3.6-4 — Qwen3.6 tool-call string-argument passthrough (R2 port)
@@ -827,6 +843,19 @@ Harness asserts:
 - *Template author:* Alibaba Cloud / Qwen Team.
 - *Provenance tier:* community-tracker (R3 base) +
   community-tracker (froggeric for `think_on`).
+
+**Sentinel-scope divergence from froggeric v21.1 (deliberate).** Our Q3.6-5
+detects sentinels only in the merged **system** message (`merged_system.rfind`),
+so a `<|think_off|>` sitting in a **tool response** or **assistant** turn can
+never flip thinking — this already provides the "prompt-injection guard"
+froggeric added in v21.1 (ignore sentinels in untrusted tool output), by
+construction. froggeric v21.1 scopes detection to `system OR user` messages,
+i.e. it *also* honors a sentinel a user types mid-conversation; we do not (a
+user turn cannot flip thinking under Q3.6-5). This is a deliberate scope
+difference, not a gap: per-request thinking control is the system prompt's job
+here, and narrower scope is the safer default. Recorded from the 2026-07-10
+froggeric v20→v21.3 source-sweep; revisit only if a user-turn override is
+actually wanted.
 
 ---
 

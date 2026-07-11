@@ -13,6 +13,17 @@ documented in `docs/PATCH-CATALOG.md`.
   pending fixture-driven verification).
 - **Qwen3.6** — patch Q3.6-1 (`preserve_thinking` default-on flip) for the
   35B-A3B size. Verified against `unsloth/Qwen3.6-35B-A3B-MLX-8bit` upstream.
+- **Qwen3.6** — patch Q3.6-12 (Anthropic-style `message.thinking` reasoning
+  support) added to the shipped 35B-A3B stack; additive — byte-identical for
+  all non-`thinking` inputs. Opt-in Q3.6-13 (`tool_call_format="json"` Hermes
+  tool calls) ships a `.patch`, not in the default stack. Both ported from
+  froggeric's v21.1/v21.3 during the 2026-07-10 froggeric source-sweep
+  (v20 → v21.3); README + template snapshotted at
+  `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-{README-v21.3.md,v21.3.jinja}`.
+  Sweep also recorded convergence (froggeric now defaults `preserve_thinking`
+  ON, per Q3.6-1) and watch items (v21.1 think-close anchoring vs our Q3.6-3;
+  sentinel-scope divergence vs our Q3.6-5; 80-char FP scoping for the Q3.6-8
+  watch).
 - **Gemma 4** — patch G7 (empty-content tool-call assistant turn closure)
   for the 26B-A4B-it / 31B-it / E2B-it / E4B-it sizes. Bug originally reported
   upstream as Blaizzy/mlx-vlm#1033 and #1034.

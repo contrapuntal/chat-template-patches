@@ -95,7 +95,7 @@ DECLARED_FAMILIES = ("gemma4", "qwen3.5", "qwen3.6")
 # a family here documents that the patched/ dir is expected empty and
 # disables the "must ship at least one patched template" assertion. Move
 # a family OUT of this set when its first patched template is added.
-CATALOG_ONLY_FAMILIES = frozenset({"qwen3.5"})
+CATALOG_ONLY_FAMILIES = frozenset({"qwen3.5", "gemma4"})
 
 
 @dataclass(frozen=True)

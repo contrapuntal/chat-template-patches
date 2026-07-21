@@ -108,10 +108,23 @@ def test_basic_chat_renders(template_pairs: list[TemplatePair], variant: str) ->
 
 
 # ---------------------------------------------------------------------------
-# G7 — Gemma 4 empty-content tool-call assistant turn closure
+# Gemma 4 — G7 / G9 / G10 RETIRED (fixed upstream 2026-07-09)
 # ---------------------------------------------------------------------------
 
-GEMMA4_SIZES = ["26B-A4B-it", "31B-it", "E2B-it", "E4B-it"]
+# Google's 2026-07-09 template rewrite ("Fixed tool-calling loops, turn
+# closures, and thinking content-ordering") fixed all three:
+#   G7  empty-content tool-call turn closure  -> close conditional gained
+#       `and not next_nt.found`
+#   G9  consecutive-assistant turn balance    -> upstream added the same
+#       forward-scan + `continues_into_next` suppression G9 derived
+#   G10 preserve_thinking                     -> upstream added a NATIVE
+#       `preserve_thinking` kwarg with the same default-OFF contract
+# The patches are retired and gemma4 ships no patched/ templates (it is now in
+# CATALOG_ONLY_FAMILIES). These tests are INVERTED: they assert upstream STAYS
+# fixed, so a future upstream regression re-surfaces the bug here rather than
+# silently returning. See docs/PATCH-CATALOG.md §§ G7 / G9 / G10.
+
+GEMMA4_SIZES = ["12B-it", "26B-A4B-it", "31B-it", "E2B-it", "E4B-it"]
 
 
 def _find_pair(pairs: list[TemplatePair], family: str, size: str) -> TemplatePair:
@@ -123,224 +136,88 @@ def _find_pair(pairs: list[TemplatePair], family: str, size: str) -> TemplatePai
 
 def _gap_after_last_tool_response(out: str) -> str:
     """Return the substring between the LAST `<tool_response|>` and the
-    NEXT `<|turn>` opener that follows it. The G7 bug manifests as
-    *missing* `<turn|>` in this gap.
-    """
+    NEXT `<|turn>` opener that follows it. The (now-fixed) G7 bug manifested
+    as *missing* `<turn|>` in this gap."""
     end_close = "<tool_response|>"
     end_idx = out.rfind(end_close)
     if end_idx < 0:
-        return ""  # caller can pytest.skip
-    after = out[end_idx + len(end_close) :]
-    # Find the next turn opener.
+        return ""
+    after = out[end_idx + len(end_close):]
     next_idx_user = after.find("<|turn>user")
     next_idx_model = after.find("<|turn>model")
     candidates = [i for i in (next_idx_user, next_idx_model) if i >= 0]
     if not candidates:
-        return after  # everything after the tool_response is the "gap"
+        return after
     return after[: min(candidates)]
 
 
-@pytest.mark.parametrize("size", GEMMA4_SIZES)
-def test_g7_upstream_exhibits_bug(template_pairs, size: str) -> None:
-    """Upstream Gemma 4 templates MUST drop `<turn|>` after an assistant
-    tool-call turn with empty content — this is the bug G7 fixes.
-
-    If this test ever fails on upstream, it means upstream has shipped a
-    fix and G7 can be retired (move catalog entry to `upstream`).
-    """
-    pair = _find_pair(template_pairs, "gemma4", size)
-    fixture = load_fixture("gemma4_empty_content_tool_call")
-    out = render(pair.upstream, fixture)
-    if "<tool_response|>" not in out:
-        pytest.skip(f"{size} upstream rendered no <tool_response|> — fixture mismatch")
-    gap = _gap_after_last_tool_response(out)
-    assert "<turn|>" not in gap, (
-        f"upstream {size} unexpectedly emitted <turn|> close in the gap "
-        f"after the final <tool_response|> — G7 may already be fixed "
-        f"upstream; update catalog status. Gap was: {gap!r}"
-    )
-
-
-@pytest.mark.parametrize("size", GEMMA4_SIZES)
-def test_g7_patched_fixes_bug(template_pairs, size: str) -> None:
-    """Patched Gemma 4 templates MUST emit `<turn|>` after an assistant
-    tool-call turn with empty content."""
-    pair = _find_pair(template_pairs, "gemma4", size)
-    if not pair.patched_exists:
-        pytest.skip(f"{size} patched not present")
-    fixture = load_fixture("gemma4_empty_content_tool_call")
-    out = render(pair.patched, fixture)
-    if "<tool_response|>" not in out:
-        pytest.skip(f"{size} patched rendered no <tool_response|>")
-    gap = _gap_after_last_tool_response(out)
-    assert "<turn|>" in gap, (
-        f"patched {size} is missing the <turn|> close marker in the gap "
-        f"after the final <tool_response|> — G7 patch did not take effect. "
-        f"Gap was: {gap!r}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# G9 — Gemma 4 consecutive-assistant turn open/close balance
-# ---------------------------------------------------------------------------
-
-
 def _turn_counts(out: str) -> tuple[int, int]:
-    """Return (opens, closes) for Gemma 4 turn markers: `<|turn>` opens a turn,
-    `<turn|>` closes it. A balanced render has opens == closes."""
+    """(opens, closes) for Gemma 4 turn markers: `<|turn>` opens, `<turn|>` closes."""
     return out.count("<|turn>"), out.count("<turn|>")
 
 
 @pytest.mark.parametrize("size", GEMMA4_SIZES)
-def test_g9_upstream_imbalanced_on_consecutive_assistant(template_pairs, size: str) -> None:
-    """Upstream Gemma 4 leaves an ORPHANED `<turn|>` close on two back-to-back
-    assistant messages: the second's `<|turn>model` open is suppressed
-    (continue_same_model_turn) but the first already closed → closes > opens.
+def test_g7_upstream_closes_empty_content_tool_call(template_pairs, size: str) -> None:
+    """RETIRED-G7 sentinel: upstream MUST emit `<turn|>` after an assistant
+    tool-call turn with empty content when the conversation continues. If this
+    fails, upstream regressed and G7 must be un-retired."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    fixture = load_fixture("gemma4_empty_content_tool_call")
+    out = render(pair.upstream, fixture)
+    if "<tool_response|>" not in out:
+        pytest.skip(f"{size} rendered no <tool_response|> — fixture mismatch")
+    gap = _gap_after_last_tool_response(out)
+    assert "<turn|>" in gap, (
+        f"UPSTREAM REGRESSION on {size}: the `<turn|>` close after an "
+        f"empty-content tool-call turn is missing again (the old G7 bug). "
+        f"Un-retire G7 in docs/PATCH-CATALOG.md. Gap was: {gap!r}"
+    )
 
-    If this ever balances on upstream, upstream fixed it and G9 can retire."""
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g9_upstream_balances_consecutive_assistant(template_pairs, size: str) -> None:
+    """RETIRED-G9 sentinel: two back-to-back assistant messages must share ONE
+    balanced open/close pair (upstream's `continues_into_next` suppression)."""
     pair = _find_pair(template_pairs, "gemma4", size)
     fixture = load_fixture("gemma4_consecutive_assistant")
     out = render(pair.upstream, fixture)
     opens, closes = _turn_counts(out)
-    assert closes > opens, (
-        f"upstream {size} unexpectedly balanced turn markers "
-        f"(opens={opens}, closes={closes}) — G9 may already be fixed upstream; "
-        f"update catalog status.\n{out!r}"
-    )
-
-
-@pytest.mark.parametrize("size", GEMMA4_SIZES)
-def test_g9_patched_balances_consecutive_assistant(template_pairs, size: str) -> None:
-    """With G9, two consecutive assistant messages share ONE balanced
-    open/close pair: opens == closes, both message bodies survive, and there is
-    no orphaned `<turn|>`."""
-    pair = _find_pair(template_pairs, "gemma4", size)
-    if not pair.patched_exists:
-        pytest.skip(f"{size} patched not present")
-    fixture = load_fixture("gemma4_consecutive_assistant")
-    out = render(pair.patched, fixture)
-    opens, closes = _turn_counts(out)
     assert opens == closes, (
-        f"G9 broken — patched {size} turn markers still imbalanced "
-        f"(opens={opens}, closes={closes}).\n{out!r}"
+        f"UPSTREAM REGRESSION on {size}: turn markers imbalanced again "
+        f"(opens={opens}, closes={closes}) — the old G9 orphaned-`<turn|>` bug. "
+        f"Un-retire G9.\n{out!r}"
     )
     assert "FIRST_ASSISTANT_MARKER" in out and "SECOND_ASSISTANT_MARKER" in out, (
-        f"G9 dropped assistant content on {size}.\n{out!r}"
+        f"upstream {size} dropped assistant content.\n{out!r}"
     )
-    # The merged model turn must hold BOTH bodies between a single open/close:
-    # i.e. no `<turn|>` appears between the two markers.
     a = out.find("FIRST_ASSISTANT_MARKER")
     b = out.find("SECOND_ASSISTANT_MARKER")
     assert 0 <= a < b, f"unexpected ordering on {size}\n{out!r}"
     assert "<turn|>" not in out[a:b], (
-        f"G9 broken — a `<turn|>` close still sits between the two assistant "
-        f"messages on {size} (they were not merged into one turn).\n{out!r}"
+        f"UPSTREAM REGRESSION on {size}: a `<turn|>` close sits between the two "
+        f"assistant messages (they were not merged into one turn).\n{out!r}"
     )
 
 
 @pytest.mark.parametrize("size", GEMMA4_SIZES)
-def test_g9_patched_leaves_normal_alternation_unchanged(template_pairs, size: str) -> None:
-    """Regression: G9's forward-scan must NOT change normal user/assistant
-    alternation — the next non-tool message there is a user, so the close fires
-    exactly as before. Patched render must equal upstream-shape balance."""
+def test_g10_upstream_honors_preserve_thinking(template_pairs, size: str) -> None:
+    """RETIRED-G10 sentinel: upstream now ships a NATIVE `preserve_thinking`
+    kwarg — default drops historical tool-call reasoning, `True` retains it."""
     pair = _find_pair(template_pairs, "gemma4", size)
-    if not pair.patched_exists:
-        pytest.skip(f"{size} patched not present")
-    normal = {
-        "_applies_to": ["gemma4"],
-        "messages": [
-            {"role": "user", "content": "Hi"},
-            {"role": "assistant", "content": "Hello"},
-            {"role": "user", "content": "More"},
-            {"role": "assistant", "content": "Sure"},
-        ],
-        "add_generation_prompt": False,
-    }
-    out = render(pair.patched, normal)
-    opens, closes = _turn_counts(out)
-    assert opens == closes and opens >= 4, (
-        f"G9 regressed normal alternation on {size} "
-        f"(opens={opens}, closes={closes}).\n{out!r}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# G10 — Gemma 4 preserve_thinking (default-OFF kwarg, keeps historical reasoning)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("size", GEMMA4_SIZES)
-def test_g10_default_drops_historical_tool_reasoning(template_pairs, size: str) -> None:
-    """By default (no kwarg) Gemma 4 renders a tool-call turn's reasoning only
-    for the current-turn region, so the HISTORICAL turn's reasoning is dropped.
-    Patched default behaviour must match this (G10 is gated off by default)."""
-    pair = _find_pair(template_pairs, "gemma4", size)
-    if not pair.patched_exists:
-        pytest.skip(f"{size} patched not present")
     fixture = load_fixture("gemma4_history_tool_call_reasoning")
-    out = render(pair.patched, fixture)
-    assert "CUR_REASONING_MARKER" in out, (
-        f"current-turn reasoning unexpectedly dropped on {size}:\n{out!r}"
+    out_default = render(pair.upstream, fixture)
+    assert "CUR_REASONING_MARKER" in out_default, (
+        f"upstream {size} dropped current-turn reasoning:\n{out_default!r}"
     )
-    assert "HIST_REASONING_MARKER" not in out, (
-        f"patched {size} preserved historical reasoning WITHOUT the kwarg — "
-        f"G10 must be off by default.\n{out!r}"
+    assert "HIST_REASONING_MARKER" not in out_default, (
+        f"UPSTREAM CHANGE on {size}: historical reasoning is now retained WITHOUT "
+        f"the kwarg — preserve_thinking is no longer default-OFF.\n{out_default!r}"
     )
-
-
-@pytest.mark.parametrize("size", GEMMA4_SIZES)
-def test_g10_preserve_thinking_keeps_historical_reasoning(template_pairs, size: str) -> None:
-    """With preserve_thinking=true, the historical tool-call turn's reasoning
-    is rendered too (the fix for multi-step agentic arguments-collapse)."""
-    pair = _find_pair(template_pairs, "gemma4", size)
-    if not pair.patched_exists:
-        pytest.skip(f"{size} patched not present")
-    fixture = load_fixture("gemma4_history_tool_call_reasoning")
-    payload = {**fixture, "preserve_thinking": True}
-    out = render(pair.patched, payload)
-    assert "HIST_REASONING_MARKER" in out and "CUR_REASONING_MARKER" in out, (
-        f"G10 broken — preserve_thinking=True did not retain historical "
-        f"reasoning on {size}.\n{out!r}"
+    out_kwarg = render(pair.upstream, {**fixture, "preserve_thinking": True})
+    assert "HIST_REASONING_MARKER" in out_kwarg and "CUR_REASONING_MARKER" in out_kwarg, (
+        f"UPSTREAM REGRESSION on {size}: preserve_thinking=True no longer retains "
+        f"historical tool-call reasoning (the old G10 bug). Un-retire G10.\n{out_kwarg!r}"
     )
-
-
-@pytest.mark.parametrize("size", GEMMA4_SIZES)
-def test_g10_default_byte_identical_to_pre_g10(template_pairs, size: str) -> None:
-    """G10 is a default-OFF kwarg gate. Synthesize the pre-G10 (G7+G9) state by
-    reverting just the guard expression in-memory, then assert that with no
-    kwarg (and with preserve_thinking=false) the shipped template renders
-    byte-identical to that pre-G10 state — proving zero default-behaviour
-    change. (Comparing to `upstream` would be wrong here: this fixture's
-    empty-content tool-call turns are exactly G7's domain, so patched != upstream
-    by design.)"""
-    pair = _find_pair(template_pairs, "gemma4", size)
-    if not pair.patched_exists:
-        pytest.skip(f"{size} patched not present")
-    src = pair.patched.read_text()
-    g10_guard = (
-        "((preserve_thinking is defined and preserve_thinking) "
-        "or loop.index0 > ns_turn.last_user_idx)"
-    )
-    assert g10_guard in src, f"G10 guard missing from patched {size}"
-    pre_g10 = src.replace(g10_guard, "loop.index0 > ns_turn.last_user_idx")
-
-    import jinja2  # noqa: F401  (local, matches other synthetic-state tests)
-    from conftest import make_env
-
-    fixture = load_fixture("gemma4_history_tool_call_reasoning")
-    env = make_env()
-    ctx_base = {
-        "bos_token": "", "eos_token": "", "pad_token": "",
-        "add_generation_prompt": True, "add_vision_id": False, "tools": None,
-    }
-    pre_t = env.from_string(pre_g10)
-    cur_t = env.from_string(src)
-    for extra in ({}, {"preserve_thinking": False}):
-        ctx = {**ctx_base, **fixture, **extra}
-        assert pre_t.render(**ctx) == cur_t.render(**ctx), (
-            f"G10 changed default render on {size} (kwarg unset/false must be "
-            f"byte-identical to the pre-G10 state)."
-        )
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,109 @@
+From: chat-template-patches
+Subject: [Q3.6-14] Remove rfind/find — minja renders no position method
+
+Targets: templates/qwen3.6/patched/35B-A3B.jinja (shipped default stack:
+Q3.6-1 + Q3.6-2 + Q3.6-3 + Q3.6-4 + Q3.6-5 + Q3.6-6 + Q3.6-12)
+
+Status: ACTIVE — part of the shipped default stack.
+
+Failure mode (CRITICAL, and invisible to a jinja2-only harness): minja, the
+C++ Jinja engine in llama.cpp / LM Studio's GGUF path, implements NO
+position-returning string method. `rfind`, `find` and `index` are all
+Undefined, and calling one aborts the whole render:
+
+    Error: Callee is not a function: got Undefined (hint: 'rfind')
+    (llama.cpp build 9290 / bcfd1989e, `llama-template-analysis`)
+
+Both Q3.6-3 (auto-close unclosed `<think>`) and Q3.6-5 (thinking sentinels)
+were written with `rfind`/`find`, so the SHIPPED template could not render at
+all on llama.cpp. `llama-template-analysis` reported `supports_tools: false`
+for it, because minja bailed before reaching the tools branch. After this
+patch the same tool reports `supports_tools: true`, `supports_tool_calls:
+true`, `supports_parallel_tool_calls: true`.
+
+This is the same engine-divergence class as P4 (`| safe`) and the Q3.6-5
+`.replace()` index-0 hardening: jinja2 accepts the construct, so the repo's
+render harness cannot see the breakage. It was found by running the template
+through minja directly, and `tests/test_render.py::test_minja_*` now gates
+every shipped and opt-in template on a real minja parse so it cannot recur.
+
+Fix — two position-free reformulations, both using only operations minja
+implements (`split`, `join`, `last`, slicing, `length`, `in`):
+
+1. **Q3.6-5 rightmost-wins sentinel.** Whichever sentinel occurs LAST leaves
+   the SHORTER trailing segment, because the other sentinel's trailing
+   segment must still contain it. Equality is impossible while both are
+   present, so the comparison is total:
+
+       (merged_system.split('<|think_off|>')|last|length)
+         < (merged_system.split('<|think_on|>')|last|length)
+
+2. **Q3.6-3 auto-close.** `_tail` is everything after the LAST `<think>`; the
+   block is unclosed iff no closer (`</think>` or `</thinking>`) appears in
+   `_tail`. The injection point is the FIRST `<tool_call>` inside `_tail` —
+   exactly the "at or after the last `<think>`" tool call the old
+   `content.find('<tool_call>', last_think)` searched for, so the
+   earlier-completed-tool-call case Q3.6-3 was hardened against still
+   behaves correctly. Reconstruction is
+   `_head + '<think>' + _pre + '</think>' + '<tool_call>' + _post`, which is
+   byte-for-byte what the old slice form produced.
+
+Behaviour: **byte-identical under jinja2** — verified across 120 render
+combos (every qwen3.6 fixture including the Q3.6-8 eval cases x
+{default, tools, preserve_thinking on/off, enable_thinking=false}, six
+adversarial auto-close shapes, and eleven sentinel arrangements including
+both conflict orders, doubled sentinels and index-0 placement). The existing
+Q3.6-3 and Q3.6-5 regression tests pass unchanged.
+
+Diffs against the Q3.6-12-applied state.
+
+--- a/templates/qwen3.6/patched/35B-A3B.jinja
++++ b/templates/qwen3.6/patched/35B-A3B.jinja
+@@ -61,13 +61,18 @@
+     {%- endif %}
+ {%- endif %}
+ {#- Q3.6-5: detect and strip thinking-toggle sentinels in the merged system message. When BOTH appear, the rightmost-in-text sentinel wins (deterministic; matches "last write wins" intuition for an explicit per-request override appended to an inherited default). -#}
+-{%- set _think_off_pos = merged_system.rfind('<|think_off|>') %}
+-{%- set _think_on_pos = merged_system.rfind('<|think_on|>') %}
+-{%- if _think_off_pos >= 0 or _think_on_pos >= 0 %}
+-    {%- if _think_off_pos > _think_on_pos %}
+-        {%- set ns_flags.enable_thinking = false %}
++{#- Q3.6-14: minja (llama.cpp) implements NO position-returning string method — `rfind`/`find`/`index` are Undefined and abort the render. Rightmost-wins is therefore computed with `split`: whichever sentinel occurs LAST leaves the SHORTER trailing segment, because the other sentinel's trailing segment must still contain it. Byte-identical under jinja2. -#}
++{%- set _has_think_off = '<|think_off|>' in merged_system %}
++{%- set _has_think_on = '<|think_on|>' in merged_system %}
++{%- if _has_think_off or _has_think_on %}
++    {%- if _has_think_off and _has_think_on %}
++        {%- if (merged_system.split('<|think_off|>')|last|length) < (merged_system.split('<|think_on|>')|last|length) %}
++            {%- set ns_flags.enable_thinking = false %}
++        {%- else %}
++            {%- set ns_flags.enable_thinking = true %}
++        {%- endif %}
+     {%- else %}
+-        {%- set ns_flags.enable_thinking = true %}
++        {%- set ns_flags.enable_thinking = _has_think_on %}
+     {%- endif %}
+     {#- Q3.6-5: strip both sentinels with split|join, NOT `.replace()` — llama.cpp's minja silently drops the whole string when the replaced target sits at index 0 (e.g. a system prompt that STARTS with `<|think_off|>`). split|join is byte-identical under jinja2 and safe on C++ engines. (froggeric Qwen-Fixed-Chat-Templates v20.) -#}
+     {%- set merged_system = (merged_system.split('<|think_off|>')|join('')).split('<|think_on|>')|join('')|trim %}
+@@ -113,14 +118,14 @@
+     {%- elif message.role == "assistant" %}
+         {#- Q3.6-3: auto-close unclosed <think> before <tool_call>; recognize both </think> and </thinking> as valid closers. Tool-call search starts at last_think so an earlier completed <tool_call> doesn't get mistaken for the wrapped one. -#}
+         {%- if '<tool_call>' in content and '<think>' in content %}
+-            {%- set last_think = content.rfind('<think>') %}
+-            {%- set last_close_think = content.rfind('</think>') %}
+-            {%- set last_close_thinking = content.rfind('</thinking>') %}
+-            {%- set last_close = last_close_think if last_close_think > last_close_thinking else last_close_thinking %}
+-            {%- set tool_pos = content.find('<tool_call>', last_think) %}
+-            {%- if last_close < last_think %}
+-                {%- if tool_pos > last_think %}
+-                    {%- set content = content[:tool_pos] + '</think>' + content[tool_pos:] %}
++            {#- Q3.6-14: position-free reformulation (minja has no rfind/find). `_tail` is everything after the LAST `<think>`; the block is unclosed iff no closer appears in `_tail`. The injection point is the FIRST `<tool_call>` inside `_tail` — exactly the "at or after the last <think>" tool call the position form searched for. Byte-identical under jinja2. -#}
++            {%- set _tail = content.split('<think>')|last %}
++            {%- if '</think>' not in _tail and '</thinking>' not in _tail %}
++                {%- if '<tool_call>' in _tail %}
++                    {%- set _head = content.split('<think>')[:-1]|join('<think>') %}
++                    {%- set _pre = _tail.split('<tool_call>')[0] %}
++                    {%- set _post = _tail.split('<tool_call>')[1:]|join('<tool_call>') %}
++                    {%- set content = _head + '<think>' + _pre + '</think>' + '<tool_call>' + _post %}
+                 {%- else %}
+                     {%- set content = content + '</think>' %}
+                 {%- endif %}

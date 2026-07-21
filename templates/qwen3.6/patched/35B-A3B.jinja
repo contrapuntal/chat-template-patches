@@ -61,13 +61,18 @@
     {%- endif %}
 {%- endif %}
 {#- Q3.6-5: detect and strip thinking-toggle sentinels in the merged system message. When BOTH appear, the rightmost-in-text sentinel wins (deterministic; matches "last write wins" intuition for an explicit per-request override appended to an inherited default). -#}
-{%- set _think_off_pos = merged_system.rfind('<|think_off|>') %}
-{%- set _think_on_pos = merged_system.rfind('<|think_on|>') %}
-{%- if _think_off_pos >= 0 or _think_on_pos >= 0 %}
-    {%- if _think_off_pos > _think_on_pos %}
-        {%- set ns_flags.enable_thinking = false %}
+{#- Q3.6-14: minja (llama.cpp) implements NO position-returning string method — `rfind`/`find`/`index` are Undefined and abort the render. Rightmost-wins is therefore computed with `split`: whichever sentinel occurs LAST leaves the SHORTER trailing segment, because the other sentinel's trailing segment must still contain it. Byte-identical under jinja2. -#}
+{%- set _has_think_off = '<|think_off|>' in merged_system %}
+{%- set _has_think_on = '<|think_on|>' in merged_system %}
+{%- if _has_think_off or _has_think_on %}
+    {%- if _has_think_off and _has_think_on %}
+        {%- if (merged_system.split('<|think_off|>')|last|length) < (merged_system.split('<|think_on|>')|last|length) %}
+            {%- set ns_flags.enable_thinking = false %}
+        {%- else %}
+            {%- set ns_flags.enable_thinking = true %}
+        {%- endif %}
     {%- else %}
-        {%- set ns_flags.enable_thinking = true %}
+        {%- set ns_flags.enable_thinking = _has_think_on %}
     {%- endif %}
     {#- Q3.6-5: strip both sentinels with split|join, NOT `.replace()` — llama.cpp's minja silently drops the whole string when the replaced target sits at index 0 (e.g. a system prompt that STARTS with `<|think_off|>`). split|join is byte-identical under jinja2 and safe on C++ engines. (froggeric Qwen-Fixed-Chat-Templates v20.) -#}
     {%- set merged_system = (merged_system.split('<|think_off|>')|join('')).split('<|think_on|>')|join('')|trim %}
@@ -113,14 +118,14 @@
     {%- elif message.role == "assistant" %}
         {#- Q3.6-3: auto-close unclosed <think> before <tool_call>; recognize both </think> and </thinking> as valid closers. Tool-call search starts at last_think so an earlier completed <tool_call> doesn't get mistaken for the wrapped one. -#}
         {%- if '<tool_call>' in content and '<think>' in content %}
-            {%- set last_think = content.rfind('<think>') %}
-            {%- set last_close_think = content.rfind('</think>') %}
-            {%- set last_close_thinking = content.rfind('</thinking>') %}
-            {%- set last_close = last_close_think if last_close_think > last_close_thinking else last_close_thinking %}
-            {%- set tool_pos = content.find('<tool_call>', last_think) %}
-            {%- if last_close < last_think %}
-                {%- if tool_pos > last_think %}
-                    {%- set content = content[:tool_pos] + '</think>' + content[tool_pos:] %}
+            {#- Q3.6-14: position-free reformulation (minja has no rfind/find). `_tail` is everything after the LAST `<think>`; the block is unclosed iff no closer appears in `_tail`. The injection point is the FIRST `<tool_call>` inside `_tail` — exactly the "at or after the last <think>" tool call the position form searched for. Byte-identical under jinja2. -#}
+            {%- set _tail = content.split('<think>')|last %}
+            {%- if '</think>' not in _tail and '</thinking>' not in _tail %}
+                {%- if '<tool_call>' in _tail %}
+                    {%- set _head = content.split('<think>')[:-1]|join('<think>') %}
+                    {%- set _pre = _tail.split('<tool_call>')[0] %}
+                    {%- set _post = _tail.split('<tool_call>')[1:]|join('<tool_call>') %}
+                    {%- set content = _head + '<think>' + _pre + '</think>' + '<tool_call>' + _post %}
                 {%- else %}
                     {%- set content = content + '</think>' %}
                 {%- endif %}

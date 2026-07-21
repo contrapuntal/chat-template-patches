@@ -4,7 +4,7 @@ Default stack applied in `patched/`:
 
 | File | Patches applied | Bytes vs upstream | Notes |
 |---|---|---:|---|
-| `patched/35B-A3B.jinja` | Q3.6-1, Q3.6-2, Q3.6-3, Q3.6-4, Q3.6-5, Q3.6-6, Q3.6-12 | +4520 | **Q3.6-1**: flips `preserve_thinking` default to ON. **Q3.6-2**: adds `and reasoning_content` guard so the history `<think>` wrapper is only emitted when reasoning content is non-empty (R1 port; closes the empty-wrapper case Q3.6-1 alone exposed). **Q3.6-3**: auto-closes unclosed `<think>` before `<tool_call>` and recognizes `</thinking>` as a valid alternative close form (handles model hallucination). **Q3.6-4**: tool-call string-form `arguments` are emitted verbatim instead of being silently dropped (R2 port). **Q3.6-5**: `<\|think_off\|>` / `<\|think_on\|>` system-message sentinels for per-request thinking-mode control (R3 port + extension). **Q3.6-6**: unwraps the OpenAI tool-definition envelope (`{"type":"function","function":{...}}`) at the `<tools>` site, mirroring the unwrap the template already does at the tool-call site. **Q3.6-12**: sources reasoning from Anthropic-style `message.thinking` (string only) when `reasoning_content` is absent (Claude Code / Anthropic-compat clients); additive — byte-identical for all non-`thinking` and non-string-`thinking` inputs. |
+| `patched/35B-A3B.jinja` | Q3.6-1, Q3.6-2, Q3.6-3, Q3.6-4, Q3.6-5, Q3.6-6, Q3.6-12, Q3.6-14 | +5140 | **Q3.6-1**: flips `preserve_thinking` default to ON. **Q3.6-2**: adds `and reasoning_content` guard so the history `<think>` wrapper is only emitted when reasoning content is non-empty (R1 port; closes the empty-wrapper case Q3.6-1 alone exposed). **Q3.6-3**: auto-closes unclosed `<think>` before `<tool_call>` and recognizes `</thinking>` as a valid alternative close form (handles model hallucination). **Q3.6-4**: tool-call string-form `arguments` are emitted verbatim instead of being silently dropped (R2 port). **Q3.6-5**: `<\|think_off\|>` / `<\|think_on\|>` system-message sentinels for per-request thinking-mode control (R3 port + extension). **Q3.6-6**: unwraps the OpenAI tool-definition envelope (`{"type":"function","function":{...}}`) at the `<tools>` site, mirroring the unwrap the template already does at the tool-call site. **Q3.6-12**: sources reasoning from Anthropic-style `message.thinking` (string only) when `reasoning_content` is absent (Claude Code / Anthropic-compat clients); additive — byte-identical for all non-`thinking` and non-string-`thinking` inputs. **Q3.6-14**: removes `rfind`/`find` (minja implements no position-returning string method, so the template previously could not render on llama.cpp at all); byte-identical under jinja2. |
 
 **Opt-in (ships a `.patch` in `patches/qwen3.6/`, NOT in the default stack above):**
 
@@ -31,11 +31,13 @@ The `.patch` files in `patches/qwen3.6/` apply sequentially:
 5. `Q3.6-5-think-toggle-sentinels.patch` — diffs against the result of step 4.
 6. `Q3.6-6-tool-definition-envelope-unwrap.patch` — diffs against the result of step 5.
 7. `Q3.6-12-message-thinking-reasoning.patch` — diffs against the result of step 6 (active; additive `message.thinking` support).
+8. `Q3.6-14-minja-position-free-rewrite.patch` — diffs against the result of step 7 (active; removes `rfind`/`find` so the template renders on llama.cpp's minja. **Byte-identical under jinja2.**).
 
 Apply with `patch -p1 < <patch>` from the repo root, in order. The
 shipped `patched/35B-A3B.jinja` reflects the cumulative result of steps 1-6
-plus Q3.6-12 (step 7). Q3.6-12 touches only the reasoning-content sourcing
-block, disjoint from every opt-in patch's anchor.
+plus Q3.6-12 and Q3.6-14 (steps 7-8). Q3.6-12 touches only the reasoning-content sourcing
+block and Q3.6-14 only rewrites two existing expressions in place, both
+disjoint from every opt-in patch's anchor.
 
 `Q3.6-7-strengthened-tool-instructions.patch` (strengthened instructions),
 `Q3.6-9-loop-previtem-portability.patch` (minija portability),
@@ -76,9 +78,10 @@ Apply Q3.6-1 if your runtime doesn't auto-set `preserve_thinking=true`:
   - `patches/qwen3.6/Q3.6-5-think-toggle-sentinels.patch`
   - `patches/qwen3.6/Q3.6-6-tool-definition-envelope-unwrap.patch`
   - `patches/qwen3.6/Q3.6-12-message-thinking-reasoning.patch` (active)
+  - `patches/qwen3.6/Q3.6-14-minja-position-free-rewrite.patch` (active)
   - `patches/qwen3.6/Q3.6-7-strengthened-tool-instructions.patch` (opt-in)
   - `patches/qwen3.6/Q3.6-9-loop-previtem-portability.patch` (opt-in)
   - `patches/qwen3.6/Q3.6-10-auto-disable-thinking-with-tools.patch` (opt-in)
   - `patches/qwen3.6/Q3.6-13-tool-call-format-json.patch` (opt-in)
-- Catalog entries: `docs/PATCH-CATALOG.md` §§ Q3.6-1 … Q3.6-13 (Q3.6-8 watch, Q3.6-11 catalog-only, Q3.6-7/-9/-10/-13 opt-in, Q3.6-12 active)
+- Catalog entries: `docs/PATCH-CATALOG.md` §§ Q3.6-1 … Q3.6-14 (Q3.6-8 watch, Q3.6-11 catalog-only, Q3.6-7/-9/-10/-13 opt-in, Q3.6-12 active)
 - Provenance: `templates/qwen3.6/PROVENANCE.md`

@@ -1,0 +1,132 @@
+From: chat-template-patches
+Subject: [G4] `<|think_on|>` / `<|think_off|>` system-message thinking sentinels
+
+Targets: templates/gemma4/upstream/<size>.jinja with **G1 already applied**
+(Google's 2026-07-09 template). Applies to all five sizes.
+
+**Stacks on G1.** G1 rewrites the `messages[0]['content'] is sequence` test,
+which sits between the two lines G4 edits, so the two patches overlap in
+context and cannot be applied in either order independently. G4 therefore
+diffs against the G1-applied state. Apply order: **G1 -> G4 -> G8**
+(all three verified clean on all five sizes). This is not a burden in
+practice: the population that needs G4 (clients that cannot pass
+`chat_template_kwargs`) is largely the same minijinja/LM Studio population
+that needs G1, and G1 is byte-identical under jinja2 for normal inputs.
+
+Status: OPT-IN. Gemma 4 ships no default `patched/` stack.
+
+Failure mode: `enable_thinking` is only reachable as a template kwarg. A
+client that cannot pass `chat_template_kwargs` (several OpenAI-compat front
+ends, some LM Studio configurations) has no way to toggle Gemma 4's thinking
+mode per request without rebuilding the request body or reloading the model.
+
+Fix: scan the FIRST system/developer message for delimited sentinels and
+override `enable_thinking`, then strip them from the rendered system text.
+Google's 2026-07-09 rewrite normalizes the kwarg once
+(`enable_thinking | default(false)`), so the override needs a single
+injection point immediately after it.
+
+  <|think_on|>   -> enable thinking
+  <|think_off|>  -> disable thinking
+
+Design (deliberately stronger than the Reddit prior art this derives from):
+
+  1. **Delimited tokens, not bare words.** The prior art matches the bare
+     substrings `ENABLE_THINKING` / `DISABLE_THINKING`, which fire on any
+     literal occurrence — documentation, a quoted config line, a file path.
+     That is exactly the P5 `/no_thinking` false-positive this repo already
+     fixed once in R3 by moving to delimited tokens. G4 uses the same
+     `<|think_on|>` / `<|think_off|>` spelling as Qwen's Q3.6-5, so the
+     sentinel is identical across both families in this repo. The legacy
+     bare words are deliberately NOT accepted.
+  2. **split|join, never `.replace()`.** llama.cpp's minja silently drops
+     the ENTIRE string when the replaced target sits at index 0, so a system
+     prompt *starting* with a sentinel would erase the whole system block on
+     C++ engines. The prior art uses `.replace()` twice and has this bug.
+     (Same lesson as Q3.6-5 / froggeric v20.)
+  4. **Both content forms.** The prior art guards on `content is string`, so
+     a multimodal (sequence) system message is ignored. G4 handles both.
+  5. **Rightmost-in-text wins** when both sentinels appear — an explicit
+     per-request override appended to an inherited default beats the
+     default. The prior art hard-codes "disable wins", which silently
+     ignores position. (Same policy as Q3.6-5, itself an adversarial-review
+     fix.)
+
+Scope: sentinels are read only from the FIRST system/developer message, so a
+sentinel appearing in user text or a tool response can never flip thinking
+(prompt-injection guard, matching Q3.6-5's system-only scope).
+
+Content-part safety: the scan mirrors the render exactly (per-part `trim` plus a
+single space) so a sentinel cannot be synthesised across two text parts that
+render apart, and both the scan and the strip tolerate a content part with no
+`text` key (image/audio/video parts are legal in a system message; the earlier
+revision crashed on them).
+
+Verified under minja (`llama-template-analysis`, llama.cpp b9290) as well as
+jinja2: byte-identical to the G1 state across 32 no-sentinel render combos
+(all Gemma fixtures x {default, enable_thinking, preserve_thinking, tools}
+plus multimodal and no-system conversations); sentinel enable/disable, kwarg
+override, rightmost-wins in both orders, index-0 strip, sequence-form system
+content, and user-message sentinels being ignored are each pinned by tests.
+
+Small-variant note: E2B/E4B omit the non-thinking `<|channel>thought
+<channel|>` bypass, so on those sizes the sentinel controls the `<|think|>`
+system-turn injection and the post-tool-response thought channel only.
+
+Prior art: u/No_Information9314, r/LocalLLaMA "Gemma 4 thinking system
+prompt" (Apr 2026), snapshotted at
+docs/sources/pastebins/W9VxRw09-no_information9314-gemma4-enable_thinking.jinja.
+First shipped as a .patch 2026-07-20 (previously catalog-only).
+
+--- a/templates/gemma4/upstream/26B-A4B-it.jinja
++++ b/templates/gemma4/upstream/26B-A4B-it.jinja
+@@ -185,6 +185,35 @@
+ {%- set loop_messages = messages -%}
+ {%- set enable_thinking = enable_thinking | default(false) -%}
+ {%- set preserve_thinking = preserve_thinking | default(false) -%}
++{#- G4: thinking-toggle sentinels. Scan the FIRST system/developer message for
++    `<|think_on|>` / `<|think_off|>` and override `enable_thinking`; the rightmost
++    occurrence wins. Sentinels take precedence over the kwarg and are stripped from
++    the rendered system text below.
++    minja-safe: llama.cpp's minja implements NO position-returning string method
++    (`rfind`/`find`/`index` are Undefined and abort the render), so rightmost-wins is
++    derived from `split` — whichever sentinel occurs LAST leaves the SHORTER trailing
++    segment, because the other's trailing segment must still contain it.
++    The scan mirrors the render exactly (per-part `trim` + single space) so a sentinel
++    cannot be synthesised across two text parts that render apart. -#}
++{%- set ns_g4 = namespace(sys_text='') -%}
++{%- if messages and messages[0]['role'] in ['system', 'developer'] -%}
++    {%- if messages[0]['content'] is string -%}
++        {%- set ns_g4.sys_text = messages[0]['content'] -%}
++    {%- elif messages[0]['content'] is iterable and messages[0]['content'] is not string and messages[0]['content'] is not mapping -%}
++        {%- for item in messages[0]['content'] -%}
++            {%- set ns_g4.sys_text = ns_g4.sys_text ~ ((item.get('text') or '') | trim) ~ ' ' -%}
++        {%- endfor -%}
++    {%- endif -%}
++{%- endif -%}
++{%- set _g4_has_off = '<|think_off|>' in ns_g4.sys_text -%}
++{%- set _g4_has_on = '<|think_on|>' in ns_g4.sys_text -%}
++{%- if _g4_has_off or _g4_has_on -%}
++    {%- if _g4_has_off and _g4_has_on -%}
++        {%- set enable_thinking = (ns_g4.sys_text.split('<|think_off|>')|last|length) > (ns_g4.sys_text.split('<|think_on|>')|last|length) -%}
++    {%- else -%}
++        {%- set enable_thinking = _g4_has_on -%}
++    {%- endif -%}
++{%- endif -%}
+ {{- bos_token -}}
+ {#- Handle System/Tool Definitions Block -#}
+ {%- if enable_thinking or tools or (messages and messages[0]['role'] in ['system', 'developer']) -%}
+@@ -196,10 +225,11 @@
+     {%- endif -%}
+     {%- if messages and messages[0]['role'] in ['system', 'developer'] -%}
+         {%- if messages[0]['content'] is string -%}
+-            {{- messages[0]['content'] | trim -}}
++            {{- (messages[0]['content'].split('<|think_off|>')|join('')).split('<|think_on|>')|join('') | trim -}}
+         {%- elif messages[0]['content'] is iterable and messages[0]['content'] is not string and messages[0]['content'] is not mapping -%}
+             {%- for item in messages[0]['content'] -%}
+-                {{- item['text'] | trim + ' '-}}
++                {%- set _g4t = (item.get('text') or '') -%}
++                {{- (_g4t.split('<|think_off|>')|join('')).split('<|think_on|>')|join('') | trim + ' '-}}
+             {%- endfor -%}
+         {%- endif -%}
+         {%- set loop_messages = messages[1:] -%}

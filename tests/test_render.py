@@ -324,6 +324,143 @@ def test_g8_restores_dropped_schema_constructs(template_pairs, size: str) -> Non
 
 
 # ---------------------------------------------------------------------------
+# Gemma 4 — G4 thinking-toggle sentinels (OPT-IN; stacks on G1)
+# ---------------------------------------------------------------------------
+
+G4_PATCH = REPO_ROOT / "patches" / "gemma4" / "G4-thinking-toggle-sentinels.patch"
+
+
+def _apply_g1_g4(upstream_src: str) -> str:
+    """G4 diffs against the G1-applied state (G1 rewrites the `is sequence`
+    line sitting between G4's two edited lines, so they overlap in context)."""
+    return _apply_gemma_patch(_apply_gemma_patch(upstream_src, G1_PATCH), G4_PATCH)
+
+
+def _g4_has_think(out: str) -> bool:
+    return "<|think|>" in out
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g4_patch_stacks_on_g1_and_is_inert_without_sentinels(template_pairs, size: str) -> None:
+    """G1 -> G4 must apply, and with no sentinel present the render must be
+    byte-identical to the G1-only state (G4 is a pure escape hatch)."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    assert G4_PATCH.is_file(), f"G4 patch missing at {G4_PATCH}"
+    src = pair.upstream.read_text()
+    g1 = _apply_gemma_patch(src, G1_PATCH)
+    g1g4 = _apply_g1_g4(src)
+    assert "think_on" in g1g4, "G4 did not introduce the sentinel scan"
+    convs = [
+        [{"role": "user", "content": "hi"}],
+        [{"role": "system", "content": "plain sys"}, {"role": "user", "content": "hi"}],
+        [{"role": "system", "content": [{"type": "text", "text": "sys"}]},
+         {"role": "user", "content": "hi"}],
+    ]
+    for msgs in convs:
+        for extra in ({}, {"enable_thinking": True}, {"preserve_thinking": True}):
+            payload = {"messages": msgs, **extra}
+            assert _render_str(g1, payload) == _render_str(g1g4, payload), (
+                f"G4 changed the no-sentinel render on {size} (extra={extra})"
+            )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g4_sentinels_toggle_and_are_stripped(template_pairs, size: str) -> None:
+    """`<|think_on|>` enables thinking and `<|think_off|>` overrides an explicit
+    enable_thinking=True kwarg; both are stripped from the rendered output and
+    the surrounding system text survives."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    t = _apply_g1_g4(pair.upstream.read_text())
+    on = _render_str(t, {"messages": [
+        {"role": "system", "content": "You are helpful.<|think_on|>"},
+        {"role": "user", "content": "hi"}]})
+    assert _g4_has_think(on) and "<|think_on|>" not in on and "You are helpful." in on, on
+    off = _render_str(t, {"messages": [
+        {"role": "system", "content": "sys<|think_off|>"},
+        {"role": "user", "content": "hi"}], "enable_thinking": True})
+    assert not _g4_has_think(off) and "<|think_off|>" not in off, off
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g4_rightmost_sentinel_wins(template_pairs, size: str) -> None:
+    """Conflict policy (same as Q3.6-5): when both sentinels appear, the
+    rightmost-in-text one wins — an explicit override appended to an inherited
+    default must beat the default, regardless of code order."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    t = _apply_g1_g4(pair.upstream.read_text())
+    off_last = _render_str(t, {"messages": [
+        {"role": "system", "content": "a<|think_on|>b<|think_off|>c"},
+        {"role": "user", "content": "hi"}]})
+    on_last = _render_str(t, {"messages": [
+        {"role": "system", "content": "a<|think_off|>b<|think_on|>c"},
+        {"role": "user", "content": "hi"}]})
+    assert not _g4_has_think(off_last), f"rightmost <|think_off|> lost on {size}"
+    assert _g4_has_think(on_last), f"rightmost <|think_on|> lost on {size}"
+    for out in (off_last, on_last):
+        assert "<|think_on|>" not in out and "<|think_off|>" not in out, out
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g4_index_zero_sentinel_keeps_system_content(template_pairs, size: str) -> None:
+    """minja payload-drop guard: a system message STARTING with a sentinel must
+    keep its remaining text. `.replace()` at index 0 silently drops the whole
+    string on llama.cpp's minja — G4 uses split|join (jinja2 can't see the
+    difference, so this pins the expected behaviour)."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    t = _apply_g1_g4(pair.upstream.read_text())
+    src = t
+    assert ".replace('<|think_off|>'" not in src and ".replace('<|think_on|>'" not in src, (
+        "G4 reverted to `.replace()` for sentinel stripping — unsafe on minja"
+    )
+    out = _render_str(t, {"messages": [
+        {"role": "system", "content": "<|think_on|>Keep me."},
+        {"role": "user", "content": "hi"}]})
+    assert "Keep me." in out and "<|think_on|>" not in out and _g4_has_think(out), out
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g4_sentinel_scope_is_system_only(template_pairs, size: str) -> None:
+    """Prompt-injection guard: a sentinel in a USER message (or any non-first
+    message) must never flip thinking — only the first system/developer
+    message is scanned."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    t = _apply_g1_g4(pair.upstream.read_text())
+    for msgs in (
+        [{"role": "user", "content": "please <|think_on|> now"}],
+        [{"role": "system", "content": "sys"},
+         {"role": "user", "content": "<|think_on|>"}],
+    ):
+        out = _render_str(t, {"messages": msgs})
+        assert not _g4_has_think(out), (
+            f"G4 honored a sentinel outside the first system message on {size}:\n{out!r}"
+        )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g4_sequence_form_system_content(template_pairs, size: str) -> None:
+    """The prior art guards on `content is string`; G4 must also honor a
+    multimodal (sequence) system message."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    t = _apply_g1_g4(pair.upstream.read_text())
+    out = _render_str(t, {"messages": [
+        {"role": "system", "content": [{"type": "text", "text": "sys <|think_on|>"}]},
+        {"role": "user", "content": "hi"}]})
+    assert _g4_has_think(out) and "<|think_on|>" not in out and "sys" in out, out
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g4_g8_chain_applies(template_pairs, size: str) -> None:
+    """Documented apply order G1 -> G4 -> G8 must hold, and the result must
+    still render."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    chained = _apply_gemma_patch(_apply_g1_g4(pair.upstream.read_text()), G8_PATCH)
+    out = _render_str(chained, {"messages": [
+        {"role": "system", "content": "sys<|think_on|>"},
+        {"role": "user", "content": "hi"}]})
+    assert _g4_has_think(out) and "<|think_on|>" not in out, out
+
+
+# ---------------------------------------------------------------------------
 # Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
 # ---------------------------------------------------------------------------
 

@@ -1,6 +1,50 @@
---- a/templates/gemma4/upstream/26B-A4B-it.jinja	2026-05-06 00:00:00
-+++ b/templates/gemma4/patched/26B-A4B-it.jinja	2026-05-06 00:00:00
-@@ -11,12 +11,39 @@
+From: chat-template-patches
+Subject: [G8] JSON Schema robustness in Gemma 4 tool declarations
+
+Targets: templates/gemma4/upstream/<size>.jinja — Google's 2026-07-09
+template (big family `ae53464b`, small family `0a2c8073`). Applies cleanly
+to all five sizes (12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it); the
+`format_parameters` macro is identical across them.
+
+Status: OPT-IN. Gemma 4 ships no default `patched/` stack (G7/G9/G10 were
+retired when Google fixed them upstream on 2026-07-09), so this patch is
+applied only by users whose tools use the affected schema constructs.
+
+Failure mode: Google's `format_parameters` only emits `enum` (and only when
+`type == 'STRING'`) plus `items` for arrays. Every other JSON Schema
+construct is **silently dropped** from the tool declaration the model sees:
+
+  - `anyOf` / `oneOf` / `allOf`   (Optional[...] / union types)
+  - `$ref` / `$defs`             (nested Pydantic models)
+  - `const`
+  - `enum` on a non-STRING type
+  - union `type` arrays (e.g. `"type": ["string", "null"]`)
+
+These are exactly what Pydantic v2 emits, so MCP tools generated from
+Pydantic models lose their constraints — the model cannot see that a field
+is optional, a reference, or restricted to a fixed value.
+
+Fix: rewrite the per-property branch to collect `type` into a `type_names`
+namespace (handling both string and list forms) and emit `anyOf` / `oneOf` /
+`allOf` / `$ref` / `$defs` / `const` / `enum` explicitly, independent of the
+declared type.
+
+Verified against the 2026-07-09 upstream: a tool whose properties use
+`anyOf`, `$ref`, and `const` renders all three in the patched output and
+none of them in stock upstream.
+
+Prior art: u/sigjhl's iterated template (r/LocalLLaMA), a superset of the
+HF PR at `google/gemma-4-31B-it/discussions/91` (still unmerged as of
+2026-07-20). Snapshotted at
+docs/sources/pastebins/tBAHN6FV-sigjhl-gemma4-jsonschema-robustness.jinja.
+
+Regenerated 2026-07-20 against the 2026-07-09 upstream. The previous
+revision carried a 7th hunk that only added a trailing newline; Google's
+new file already ends with one, so that hunk is dropped.
+
+--- a/templates/gemma4/upstream/26B-A4B-it.jinja
++++ b/templates/gemma4/upstream/26B-A4B-it.jinja
+@@ -17,12 +17,39 @@
                  description:<|"|>{{ value['description'] }}<|"|>
                  {%- set add_comma = true -%}
              {%- endif -%}
@@ -45,7 +89,7 @@
                  {%- if value['items'] is mapping and value['items'] -%}
                      {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
                      items:{
-@@ -52,11 +79,11 @@
+@@ -58,11 +85,11 @@
                      }
                  {%- endif -%}
              {%- endif -%}
@@ -59,7 +103,7 @@
                  {%- if value['properties'] is defined and value['properties'] is mapping -%}
                      {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
                      properties:{
-@@ -68,7 +95,7 @@
+@@ -74,7 +101,7 @@
                      {{- format_parameters(value, value['required'] | default([]), filter_keys=true) -}}
                      }
                  {%- endif -%}
@@ -68,7 +112,7 @@
                      {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
                      required:[
                      {%- for item in value['required'] | default([]) -%}
-@@ -78,8 +105,15 @@
+@@ -84,8 +111,15 @@
                      ]
                  {%- endif -%}
              {%- endif -%}
@@ -86,17 +130,17 @@
          {%- endif -%}
      {%- endfor -%}
  {%- endmacro -%}
-@@ -91,6 +125,9 @@
+@@ -96,6 +130,9 @@
+         ,parameters:{
          {%- if params['properties'] -%}
              properties:{ {{- format_parameters(params['properties'], params['required']) -}} },
-         {%- endif -%}
++        {%- endif -%}
 +        {%- if params['$defs'] is defined and params['$defs'] -%}
 +            $defs:{{ format_argument(params['$defs'], escape_keys=false) }},
-+        {%- endif -%}
+         {%- endif -%}
          {%- if params['required'] -%}
              required:[
-             {%- for item in params['required'] -%}
-@@ -120,6 +157,8 @@
+@@ -128,6 +165,8 @@
          {{- '<|"|>' + argument + '<|"|>' -}}
      {%- elif argument is boolean -%}
          {{- 'true' if argument else 'false' -}}
@@ -105,10 +149,3 @@
      {%- elif argument is mapping -%}
          {{- '{' -}}
          {%- set ns = namespace(found_first=false) -%}
-@@ -351,4 +390,4 @@
-             {{- '<|channel>thought\n<channel|>' -}}
-         {%- endif -%}
-     {%- endif -%}
--{%- endif -%}
-\ No newline at end of file
-+{%- endif -%}

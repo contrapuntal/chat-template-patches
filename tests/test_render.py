@@ -221,6 +221,109 @@ def test_g10_upstream_honors_preserve_thinking(template_pairs, size: str) -> Non
 
 
 # ---------------------------------------------------------------------------
+# Gemma 4 — G1 / G8 (OPT-IN patches; gemma4 ships no patched/ stack)
+# ---------------------------------------------------------------------------
+
+G1_PATCH = REPO_ROOT / "patches" / "gemma4" / "G1-portable-iterable-check.patch"
+G8_PATCH = REPO_ROOT / "patches" / "gemma4" / "G8-jsonschema-robustness.patch"
+
+
+def _apply_gemma_patch(base_src: str, patch_path) -> str:
+    """Apply a repo-relative unified-diff .patch to a single-file base in pure
+    Python (no external `patch`), reusing the Q3.6-13 additive applier."""
+    return _apply_additive_patch(base_src, patch_path)
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g1_upstream_still_uses_sequence_test(template_pairs, size: str) -> None:
+    """G1 is still needed: upstream must still carry the non-portable
+    `is sequence` test. If this fails, Google fixed it and G1 can retire."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    src = pair.upstream.read_text()
+    assert "is sequence" in src, (
+        f"upstream {size} no longer uses `is sequence` — G1 may be fixed "
+        f"upstream; update docs/PATCH-CATALOG.md § G1."
+    )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g1_patch_removes_all_sequence_tests(template_pairs, size: str) -> None:
+    """Applying G1 must eliminate every `is sequence` occurrence (the surface
+    grew to 4 sites in Google's 2026-07-09 rewrite)."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    assert G1_PATCH.is_file(), f"G1 patch missing at {G1_PATCH}"
+    applied = _apply_gemma_patch(pair.upstream.read_text(), G1_PATCH)
+    assert "is sequence" not in applied, (
+        f"G1 left an `is sequence` test behind on {size}"
+    )
+    assert applied.count("is not mapping") >= 4, (
+        f"G1 did not add the mapping guard at every site on {size}"
+    )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g1_is_render_equivalent_under_jinja2(template_pairs, size: str) -> None:
+    """G1 is a portability rewrite: under jinja2 it must render byte-identically
+    to upstream for normal inputs (string / list content), across kwarg sets."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    src = pair.upstream.read_text()
+    applied = _apply_gemma_patch(src, G1_PATCH)
+    fixtures = [
+        "gemma4_empty_content_tool_call",
+        "gemma4_consecutive_assistant",
+        "gemma4_history_tool_call_reasoning",
+    ]
+    for name in fixtures:
+        fx = {k: v for k, v in load_fixture(name).items() if not k.startswith("_")}
+        for extra in ({}, {"preserve_thinking": True}, {"enable_thinking": True}):
+            payload = {**fx, **extra}
+            assert _render_str(src, payload) == _render_str(applied, payload), (
+                f"G1 changed the render on {size} ({name}, extra={extra}) — it "
+                f"must be a pure portability rewrite for normal inputs."
+            )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g1_fixes_dict_content_crash(template_pairs, size: str) -> None:
+    """Deliberate behaviour change: jinja2's `sequence` test is true for
+    MAPPINGS, so a dict-valued `content` made upstream iterate the dict's
+    string keys and raise. G1's `is not mapping` guard renders instead."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    src = pair.upstream.read_text()
+    applied = _apply_gemma_patch(src, G1_PATCH)
+    payload = {"messages": [{"role": "user", "content": {"type": "text", "text": "D"}}]}
+    with pytest.raises(Exception):
+        _render_str(src, payload)
+    out = _render_str(applied, payload)  # must not raise
+    assert "<|turn>user" in out, f"G1 dict-content render looks wrong on {size}:\n{out!r}"
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g8_restores_dropped_schema_constructs(template_pairs, size: str) -> None:
+    """Upstream silently drops anyOf / $ref / const from tool declarations;
+    G8 must restore them (Pydantic-v2 / MCP tool schemas depend on this)."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    assert G8_PATCH.is_file(), f"G8 patch missing at {G8_PATCH}"
+    src = pair.upstream.read_text()
+    applied = _apply_gemma_patch(src, G8_PATCH)
+    tools = [{"type": "function", "function": {"name": "t", "parameters": {
+        "type": "object", "properties": {
+            "a": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "b": {"$ref": "#/$defs/Thing"},
+            "c": {"type": "string", "const": "CONST_VAL"},
+        }}}}]
+    payload = {"messages": [{"role": "user", "content": "hi"}], "tools": tools}
+    up_out = _render_str(src, payload)
+    g8_out = _render_str(applied, payload)
+    for token in ("anyOf", "$ref", "CONST_VAL"):
+        assert token not in up_out, (
+            f"upstream {size} unexpectedly emits {token!r} — G8 may be merged "
+            f"upstream; update docs/PATCH-CATALOG.md § G8."
+        )
+        assert token in g8_out, f"G8 failed to restore {token!r} on {size}"
+
+
+# ---------------------------------------------------------------------------
 # Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
 # ---------------------------------------------------------------------------
 

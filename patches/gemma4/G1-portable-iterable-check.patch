@@ -1,0 +1,80 @@
+From: chat-template-patches
+Subject: [G1] Replace `is sequence` with a portable iterable check (minijinja)
+
+Targets: templates/gemma4/upstream/<size>.jinja — Google's 2026-07-09
+template. Applies to all five sizes (12B-it, 26B-A4B-it, 31B-it, E2B-it,
+E4B-it); the affected lines are identical across them.
+
+Status: OPT-IN. Required for minijinja-based runtimes (LM Studio's MCP
+path). Standard `jinja2` implements the `sequence` test, so this patch is a
+no-op there for normal inputs.
+
+Failure mode: LM Studio's minijinja does not implement the `sequence` test:
+
+    Error rendering prompt with jinja template: "Unknown test: sequence"
+
+Every Gemma 4 MCP tool call fails. Google's 2026-07-09 rewrite did not
+address this and in fact GREW the surface from 3 sites to 4 — it added
+`tool_body is sequence` in the new multimodal tool-response branch.
+
+Fix: replace all four `is sequence` tests with the portable form
+`X is iterable and X is not string and X is not mapping`:
+
+  - `format_argument`            (argument)
+  - first-system-message handler (messages[0]['content'])
+  - tool-response body           (tool_body — already had `is not string`)
+  - assistant/user content parts (message.get('content'))
+
+Verified byte-identical under jinja2 across all Gemma 4 fixtures x
+{no kwargs, tools, preserve_thinking, enable_thinking} (12 render combos).
+
+Bonus correctness fix (a real behaviour change, deliberate): jinja2's
+`sequence` test returns true for MAPPINGS, so a dict-valued `content`
+previously entered the content-parts loop, iterated the dict's string keys,
+and raised `'str object' has no attribute 'get'`. The explicit
+`is not mapping` guard excludes that case, so the turn renders instead of
+crashing. This is the only input class where the patched and stock
+templates differ under jinja2.
+
+Prior art: u/Reaper_9382, r/LocalLLaMA "Fix Gemma 4 MCP tool calls broken in
+LM Studio" (Apr 2026). Patch first shipped 2026-07-20 (previously
+catalog-only) — Google's expansion of the surface made it worth shipping.
+
+--- a/templates/gemma4/upstream/26B-A4B-it.jinja
++++ b/templates/gemma4/upstream/26B-A4B-it.jinja
+@@ -142,7 +142,7 @@
+             :{{- format_argument(value, escape_keys=escape_keys) -}}
+         {%- endfor -%}
+         {{- '}' -}}
+-    {%- elif argument is sequence -%}
++    {%- elif argument is iterable and argument is not string and argument is not mapping -%}
+         {{- '[' -}}
+         {%- for item in argument -%}
+             {{- format_argument(item, escape_keys=escape_keys) -}}
+@@ -197,7 +197,7 @@
+     {%- if messages and messages[0]['role'] in ['system', 'developer'] -%}
+         {%- if messages[0]['content'] is string -%}
+             {{- messages[0]['content'] | trim -}}
+-        {%- elif messages[0]['content'] is sequence -%}
++        {%- elif messages[0]['content'] is iterable and messages[0]['content'] is not string and messages[0]['content'] is not mapping -%}
+             {%- for item in messages[0]['content'] -%}
+                 {{- item['text'] | trim + ' '-}}
+             {%- endfor -%}
+@@ -294,7 +294,7 @@
+                         {%- set tool_body = follow.get('content') -%}
+                         {%- if tool_body is string -%}
+                             {{- format_tool_response_block(ns_tname.name, tool_body) -}}
+-                        {%- elif tool_body is sequence and tool_body is not string -%}
++                        {%- elif tool_body is iterable and tool_body is not string and tool_body is not mapping -%}
+                             {%- set ns_txt = namespace(s='') -%}
+                             {%- for part in tool_body -%}
+                                 {%- if part.get('type') == 'text' -%}
+@@ -327,7 +327,7 @@
+                 {%- else -%}
+                     {{- message['content'] | trim -}}
+                 {%- endif -%}
+-            {%- elif message.get('content') is sequence -%}
++            {%- elif message.get('content') is iterable and message.get('content') is not string and message.get('content') is not mapping -%}
+                 {%- for item in message['content'] -%}
+                     {%- if item.get('type') == 'text' -%}
+                         {%- if role == 'model' -%}

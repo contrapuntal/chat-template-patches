@@ -25,10 +25,13 @@ locally if they want. `tests/golden/` is intentionally empty in this repo.
 
 from __future__ import annotations
 
+import shutil
+
 import pytest
 
 from conftest import (
     CATALOG_ONLY_FAMILIES,
+    all_template_pairs,
     DECLARED_FAMILIES,
     REPO_ROOT,
     TemplatePair,
@@ -1815,3 +1818,103 @@ def test_q36_13_json_mode_emits_hermes_shape(template_pairs) -> None:
         assert json.loads(body) == expect, (
             f"Q3.6-13 emitted invalid/wrong JSON for arguments={args!r}: {body!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# minja gate — every shipped/opt-in template must parse in llama.cpp's engine
+# ---------------------------------------------------------------------------
+
+# jinja2 and minja (the C++ engine in llama.cpp / LM Studio's GGUF path) diverge,
+# and the divergence is INVISIBLE to a jinja2-only harness. This repo has now hit
+# that class three times: P4 (`| safe`), Q3.6-5 (`.replace()` dropping the string
+# at index 0), and Q3.6-14 — minja implements NO position-returning string method,
+# so `rfind` / `find` / `index` are Undefined and abort the whole render. The
+# shipped Qwen3.6 template used `rfind` and could not render on llama.cpp at all;
+# `llama-template-analysis` reported `supports_tools: false` for it.
+#
+# This gate parses every shipped template, and every opt-in patch applied to its
+# base, through the real minja binary. It SKIPS when the binary is absent so the
+# suite stays runnable without llama.cpp installed.
+
+MINJA_BIN = shutil.which("llama-template-analysis")
+MINJA_FORBIDDEN = (".rfind(", ".find(", ".index(")
+
+
+def _minja_parses(src: str) -> tuple[bool, str]:
+    """Render `src` through llama.cpp's minja. Returns (ok, detail)."""
+    import subprocess
+    import tempfile
+    from pathlib import Path as _P
+
+    with tempfile.TemporaryDirectory() as d:
+        f = _P(d) / "t.jinja"
+        f.write_text(src)
+        r = subprocess.run([MINJA_BIN, "--template-file", str(f)],
+                           capture_output=True, text=True)
+    out = r.stdout + r.stderr
+    if "Analysis failed" in out:
+        detail = ""
+        for line in out.splitlines():
+            if "Error:" in line:
+                detail = line.strip()
+                break
+        return False, detail or "Analysis failed"
+    return True, ""
+
+
+def _shipped_and_optin_templates() -> list[tuple[str, str]]:
+    """(label, source) for every shipped template and every opt-in patch applied
+    to the base it targets."""
+    cases: list[tuple[str, str]] = []
+    for pair in all_template_pairs():
+        if pair.patched_exists:
+            cases.append((f"{pair.family}/patched/{pair.size}", pair.patched.read_text()))
+    # Gemma opt-ins: G1 and G8 apply to bare upstream; G4 stacks on G1.
+    gemma = [p for p in all_template_pairs() if p.family == "gemma4"]
+    for pair in gemma:
+        base = pair.upstream.read_text()
+        g1 = _apply_additive_patch(base, G1_PATCH)
+        cases.append((f"gemma4/{pair.size}+G1", g1))
+        cases.append((f"gemma4/{pair.size}+G8", _apply_additive_patch(base, G8_PATCH)))
+        cases.append((f"gemma4/{pair.size}+G1+G4", _apply_additive_patch(g1, G4_PATCH)))
+    return cases
+
+
+_MINJA_CASES = [pytest.param(_lbl, _src, id=_lbl)
+                for _lbl, _src in _shipped_and_optin_templates()]
+
+
+def test_minja_binary_presence_is_reported() -> None:
+    """Visibility: make it obvious in the run whether the minja gate is active."""
+    if MINJA_BIN is None:
+        pytest.skip(
+            "llama-template-analysis not on PATH — the minja gate is INACTIVE. "
+            "Install llama.cpp to enable it (this is the only check that can see "
+            "jinja2/minja divergence)."
+        )
+    assert MINJA_BIN
+
+
+@pytest.mark.parametrize("label,src", _MINJA_CASES)
+def test_minja_renders_every_shipped_and_optin_template(label: str, src: str) -> None:
+    """Hard gate: every template we ship (and every opt-in patch applied to its
+    base) must parse and render under llama.cpp's minja."""
+    if MINJA_BIN is None:
+        pytest.skip("llama-template-analysis not on PATH")
+    ok, detail = _minja_parses(src)
+    assert ok, (
+        f"{label} does not render under llama.cpp's minja: {detail}\n"
+        f"minja implements no rfind/find/index and diverges from jinja2 in other "
+        f"ways; reformulate with split/join/`in`/slicing."
+    )
+
+
+@pytest.mark.parametrize("label,src", _MINJA_CASES)
+def test_no_position_returning_string_methods(label: str, src: str) -> None:
+    """Static belt-and-braces companion to the minja gate: `rfind`/`find`/`index`
+    must not reappear. Runs even when the minja binary is unavailable."""
+    hits = [m for m in MINJA_FORBIDDEN if m in src]
+    assert not hits, (
+        f"{label} uses position-returning string method(s) {hits} — minja has "
+        f"none of them and aborts the render. See PATCH-CATALOG § Q3.6-14."
+    )

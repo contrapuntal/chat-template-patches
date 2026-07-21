@@ -47,10 +47,11 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | Q3.6-8 | Qwen3.6 | froggeric forward-tracked `consecutive_failures` two-tier tool-error escalation (seed a `<think>` correction on 1st failure, out-of-band directive on 2nd+) | **watch** (NOT implemented; gated behind an eval — `tests/fixtures/qwen36_repeated_tool_failures.json` + `docs/evals/Q3.6-8-error-escalation.md`). **froggeric v18 now supplies the structural FP-detection the gate's false-positive cases demand** (`"error":`/`Exception:`/`Traceback`/`command not found`, not substrings); **v21.1 further scopes detection to the first 80 chars of the tool response + adds `err!`/`fatal:`** — de-risks FP concern #1; prefix-symmetry concern #2 still open. | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v15/v16 → **v18/v20/v21.3 snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-12 | Qwen3.6 | Accept Anthropic-style `message.thinking` reasoning payloads as an alternate reasoning source (Claude Code / Anthropic-compat clients) | **active** (shipped in default `patched/`; stacks on Q3.6-6) | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v21.1 **snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja`) | Qwen3.6-35B-A3B |
 | Q3.6-13 | Qwen3.6 | froggeric `tool_call_format="json"` kwarg — opt-in Hermes-JSON tool-call format (default stays native XML) | **opt-in** (ships a `.patch`, NOT in default `patched/`; parser-lock-in / grammar-shift — default XML path unchanged) | community-tracker (froggeric v21.3 **snapshotted**) | Qwen3.6-35B-A3B |
+| Q3.6-14 | Qwen3.6 | Remove `rfind`/`find` — minja (llama.cpp) implements no position-returning string method, so the shipped template could not render there at all | **active** (shipped default stack; byte-identical under jinja2) | derived (found by running the template through llama.cpp's minja; engine-divergence class of P4 / Q3.6-5) | Qwen3.6-35B-A3B |
 | G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio / minijinja MCP path). **Now ships a `.patch`** (2026-07-20) — Google's 2026-07-09 rewrite **grew the surface 3→4 sites**. Also fixes a latent dict-`content` crash. | community-ephemeral (Reddit thread) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 | G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | community-tracker (asfbrz96 GitHub repo + aldegr gist; both **snapshotted** at `docs/sources/github-snapshots/asf0-...` and `docs/sources/gists/aldehir-...`) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
 | G3 | Gemma 4 | Apr 2026 official template realignment | **upstream** (Google HF + llama.cpp #21704 #21760) | publisher | Gemma 4 26B-A4B-it, 31B-it |
-| G4 | Gemma 4 | `ENABLE_THINKING` / `DISABLE_THINKING` system-message sentinel | **opt-in** | community-ephemeral (Reddit + pastebin; **snapshotted** at `docs/sources/pastebins/W9VxRw09-...jinja`) | Gemma 4 26B-A4B-it, 31B-it |
+| G4 | Gemma 4 | `<\|think_on\|>` / `<\|think_off\|>` system-message thinking sentinels | **opt-in** (**now ships a `.patch`**, 2026-07-20; **stacks on G1**). Re-specified to the repo's R3/Q3.6-5 standard: delimited tokens, `split\|join`, both content forms, rightmost-wins — the Reddit prior art's bare `ENABLE_THINKING` words are deliberately not accepted. | community-ephemeral (Reddit + pastebin; **snapshotted** at `docs/sources/pastebins/W9VxRw09-...jinja`) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 | G5 | Gemma 4 | LM Studio thinking-toggle `model.yaml` workaround | **active** (config-side, not a template patch) | community-ephemeral (Reddit; example yaml **snapshotted** at `docs/sources/pastebins/HDt34yA8-...yaml`) | Gemma 4 (LM Studio non-community quants) |
 | G6 | Gemma 4 | Tool-calling / system-prompt compliance grab-bag | **active** (open upstream; configuration recommendations rather than a discrete template patch) | community-ephemeral (multiple Reddit threads) | Gemma 4 26B-A4B-it primarily |
 | G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **upstream** (fixed by Google 2026-07-09; patch retired, `.patch` deleted). Kept as an **inverted regression sentinel** in `tests/test_render.py`. | derived (bug report: upstream-tracker `Blaizzy/mlx-vlm#1033` + `#1034`) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
@@ -1268,6 +1269,60 @@ obsolete trailing-newline fix).
 
 ---
 
+### Q3.6-14 — Qwen3.6 position-free rewrite (minja portability)
+
+**Target:** Qwen3.6-35B-A3B. **Status: active** — shipped in the default stack,
+diffs against the Q3.6-12 state.
+
+**Failure mode (CRITICAL, invisible to a jinja2-only harness).** minja — the C++
+Jinja engine in llama.cpp and LM Studio's GGUF path — implements **no
+position-returning string method**. `rfind`, `find` and `index` are all
+Undefined, and calling one aborts the render:
+
+```
+Error: Callee is not a function: got Undefined (hint: 'rfind')
+(llama.cpp build 9290 / bcfd1989e, via `llama-template-analysis`)
+```
+
+Q3.6-3 (auto-close) and Q3.6-5 (sentinels) both used them, so **the shipped
+Qwen3.6 template could not render on llama.cpp at all** — `llama-template-analysis`
+reported `supports_tools: false` for it, because minja bailed before reaching the
+tools branch. After this patch the same tool reports `supports_tools: true`,
+`supports_tool_calls: true`, `supports_parallel_tool_calls: true`.
+
+**Fix.** Two position-free reformulations using only operations minja implements
+(`split`, `join`, `last`, slicing, `length`, `in`):
+
+1. *Q3.6-5 rightmost-wins.* Whichever sentinel occurs LAST leaves the SHORTER
+   trailing segment, because the other's trailing segment must still contain it.
+   Equality is impossible while both are present, so the comparison is total.
+2. *Q3.6-3 auto-close.* `_tail` is everything after the last `<think>`; the block
+   is unclosed iff no closer appears in `_tail`; inject before the first
+   `<tool_call>` **inside `_tail`** — exactly the "at or after the last
+   `<think>`" tool call the old `find(..., last_think)` searched for, so the
+   earlier-completed-tool-call hardening still holds.
+
+**Behaviour: byte-identical under jinja2**, verified across 120 render combos
+(every qwen3.6 fixture incl. the Q3.6-8 eval cases × {default, tools,
+preserve_thinking on/off, enable_thinking=false}, six adversarial auto-close
+shapes, eleven sentinel arrangements incl. both conflict orders and index-0).
+
+**How it was found, and the systemic fix.** Not by the repo's own harness — jinja2
+accepts `rfind`, so the suite was structurally blind to it. It surfaced in an
+independent review (gpt-5.6-sol) that ran the template through the real minja
+binary. This is the **third** time this repo has hit jinja2/minja divergence
+(P4 `| safe`; Q3.6-5's `.replace()` index-0 payload drop; now this), so
+`tests/test_render.py` gained a **minja gate**: every shipped template and every
+opt-in patch applied to its base is parsed by `llama-template-analysis`, plus a
+static check banning `rfind`/`find`/`index`. The gate skips when llama.cpp is
+absent. It was validated by reverting the fix and confirming both tests fail.
+
+**Note on Q3.6-9.** Q3.6-9 (opt-in, `loop.previtem` → indexing) targets *older*
+minja builds. It is unrelated: current minja handles `loop.previtem` but has
+never had `rfind`.
+
+---
+
 ### G1 — Gemma 4 `is sequence` minijinja crash
 
 **Target:** Gemma 4 26B-A4B-it, 31B-it. **LM Studio MCP path only.**
@@ -1325,26 +1380,100 @@ llama.cpp internal workarounds in PRs #21704 (template detection) and
 
 ---
 
-### G4 — Gemma 4 ENABLE_THINKING / DISABLE_THINKING system-message sentinel
+### G4 — Gemma 4 `<|think_on|>` / `<|think_off|>` thinking sentinels
 
-**Target:** Gemma 4 26B-A4B-it, 31B-it.
+**Target:** all five Gemma 4 sizes (12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it).
 
-**Failure mode.** Google's template enables thinking when the system prompt
-*starts with* the literal `<|think|>` token. Not toggleable per-request via
-the OpenAI-compat API without rebuilding the request body. Users report
-inconsistency with `chat_template_kwargs={"enable_thinking": ...}`
-passthrough.
+**Failure mode.** `enable_thinking` is reachable only as a template kwarg, so
+a client that cannot pass `chat_template_kwargs` has no per-request way to
+toggle thinking without rebuilding the request body or reloading the model.
+Users report inconsistent `chat_template_kwargs` passthrough across
+OpenAI-compat front ends.
 
-**Fix.** Defaults thinking OFF; scans the system message for sentinel
-strings and flips `enable_thinking` accordingly:
-- `ENABLE_THINKING` → enable
-- `DISABLE_THINKING` → disable (also strips the sentinel from rendered
-  output)
+**Failure-mode note (corrected 2026-07-20).** The original entry described
+Google's template as enabling thinking when the system prompt *starts with*
+a literal `<|think|>` token. That is not how the current template works —
+it *emits* `<|think|>` when `enable_thinking` is set and never scans the
+system prompt. The real failure mode is simply that `enable_thinking` is
+reachable only as a template kwarg, so a client that cannot pass
+`chat_template_kwargs` has no per-request toggle.
 
-**Status: opt-in.** Use only if your client doesn't reliably pass
-`chat_template_kwargs` and you want a one-off escape hatch via system text.
+**Fix.** Google's 2026-07-09 rewrite normalizes the kwarg once
+(`enable_thinking | default(false)`), so a single injection point after it
+suffices. G4 scans the FIRST system/developer message and overrides:
+- `<|think_on|>` → enable thinking
+- `<|think_off|>` → disable thinking
 
-**Prior art.** u/No_Information9314, r/LocalLLaMA, Apr 2026.
+Both are stripped from the rendered system text.
+
+**Re-specified to this repo's standard (2026-07-20).** The Reddit prior art
+is weaker than the repo's own established lessons in four ways; G4 as shipped
+diverges deliberately on each:
+
+1. **Delimited tokens, not bare words.** The prior art matches bare
+   `ENABLE_THINKING` / `DISABLE_THINKING` substrings, which fire on any
+   literal occurrence (documentation, a quoted config line, a path). That is
+   precisely the P5 `/no_thinking` false positive that **R3** already fixed
+   once by moving to delimited tokens. G4 reuses **Q3.6-5**'s exact spelling
+   so the sentinel is identical across families in this repo. The legacy bare
+   words are **not** accepted.
+2. **`split|join`, never `.replace()`.** minja silently drops the entire
+   string when the replaced target is at index 0, so a system prompt
+   *starting* with a sentinel would erase the whole system block on C++
+   engines. The prior art uses `.replace()` twice and carries this bug.
+3. **Both content forms.** The prior art guards on `content is string`, so a
+   multimodal (sequence) system message is ignored. G4 handles both.
+4. **Rightmost-in-text wins.** The prior art hard-codes "disable wins"
+   regardless of position; G4 follows Q3.6-5's adversarially-reviewed policy
+   so an explicit override appended to an inherited default beats it.
+
+**Scope.** Only the first system/developer message is scanned, so a sentinel
+in user text or a tool response can never flip thinking — the same
+prompt-injection guard as Q3.6-5's system-only scope.
+
+**Stacks on G1 (mandatory).** G1 rewrites the
+`messages[0]['content'] is sequence` test, which sits *between* the two lines
+G4 edits; the two patches overlap in context and cannot be applied
+independently in either order. G4 therefore diffs against the G1-applied
+state. Documented apply order: **G1 → G4 → G8**, verified clean on all five
+sizes. In practice this is not a burden — the clients that need G4 (no
+`chat_template_kwargs` passthrough) are largely the same minijinja/LM Studio
+population that needs G1, and G1 is byte-identical under jinja2 for normal
+inputs.
+
+**Small-variant caveat.** E2B/E4B omit the non-thinking
+`<|channel>thought<channel|>` bypass, so on those sizes the sentinel controls
+the `<|think|>` system-turn injection and the post-tool-response thought
+channel only.
+
+**Status: opt-in.** Use if your client doesn't reliably pass
+`chat_template_kwargs`. Modern llama.cpp (`--reasoning on/off`) and the G5
+`model.yaml` workaround cover most other cases.
+
+**Revised after independent review (2026-07-21).** The first cut of G4 was
+reviewed by gpt-5.6-sol against the real minja binary and had three defects,
+all now fixed:
+
+1. **It used `rfind`** — fatal on minja, the very runtime G4 targets (see
+   Q3.6-14 above for the engine-divergence detail). Rightmost-wins is now
+   derived from `split` segment lengths.
+2. **A content part with no `text` key crashed the render.** Image/audio/video
+   parts are legal in a system message; upstream tolerates them (jinja2's
+   Undefined stringifies to `''`), but G4's added `.split()` call on Undefined
+   raised. Both scan and strip now go through `item.get('text') or ''`.
+3. **A sentinel could be synthesised across two text parts.** The scan
+   concatenated parts with no separator while the render joins them with a
+   space, so `"safe <\|think_"` + `"on|> text"` produced a sentinel that never
+   appears in the rendered prompt. The scan now mirrors the render exactly
+   (per-part `trim` plus a single space).
+
+**Verification.** Byte-identical to the G1 state across 32 no-sentinel render
+combos (including text-less content parts); parses under minja on all five
+sizes; tests pin enable/disable, kwarg override, rightmost-wins in both orders,
+index-0 strip, sequence-form content, system-only scope, the G1→G4→G8 chain,
+the image-only part, and the split-across-parts non-synthesis.
+
+**Prior art.** u/No_Information9314, r/LocalLLaMA, Apr 2026 (**snapshotted**).
 
 ---
 

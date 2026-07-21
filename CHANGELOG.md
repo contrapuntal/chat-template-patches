@@ -54,6 +54,38 @@ documented in `docs/PATCH-CATALOG.md`.
   surface from 3 to 4 `is sequence` sites. Byte-identical under jinja2 for
   normal inputs, and additionally fixes a latent dict-valued-`content` crash
   (jinja2's `sequence` test is true for mappings).
+- **Qwen3.6 Q3.6-14 — the shipped template could not render on llama.cpp.**
+  minja (llama.cpp / LM Studio GGUF) implements no position-returning string
+  method: `rfind`, `find` and `index` are Undefined and abort the render.
+  Q3.6-3 and Q3.6-5 both used them, so the shipped `patched/35B-A3B.jinja`
+  failed outright there — `llama-template-analysis` reported
+  `supports_tools: false`. Both are reformulated with `split`/`join`
+  (byte-identical under jinja2, 120 render combos verified); the same tool now
+  reports `supports_tools: true` / `supports_tool_calls: true`.
+  Found by an independent review (gpt-5.6-sol) running the real minja binary —
+  the repo's jinja2-only harness was structurally blind to it.
+- **New minja gate in the test suite.** Every shipped template and every opt-in
+  patch applied to its base is now parsed by `llama-template-analysis`, plus a
+  static ban on `rfind`/`find`/`index`. Skips cleanly when llama.cpp is absent.
+  Validated by reverting the fix and confirming the gate fails. This is the
+  third jinja2/minja divergence the repo has hit (P4 `| safe`, Q3.6-5
+  `.replace()` index-0, now Q3.6-14), hence the permanent guard.
+- **Gemma 4 G4 revised before shipping.** The first cut used `rfind` (fatal on
+  the very minja runtime it targets), crashed on a system content part with no
+  `text` key, and could synthesise a sentinel across two text parts that render
+  apart. All three fixed; verified under minja on all five sizes.
+- **Gemma 4 G4 now ships a `.patch`** (`G4-thinking-toggle-sentinels.patch`),
+  re-specified to this repo's standard rather than ported verbatim. The Reddit
+  prior art matched bare `ENABLE_THINKING` / `DISABLE_THINKING` substrings and
+  stripped them with `.replace()`; the shipped form uses delimited
+  `<|think_on|>` / `<|think_off|>` tokens (same spelling as Qwen's Q3.6-5),
+  `split|join` stripping (minja index-0 payload-drop safety), handles
+  sequence-form system content, and resolves conflicts rightmost-in-text.
+  Scanned only from the first system/developer message (prompt-injection
+  guard). **Stacks on G1** — apply order `G1 → G4 → G8`. Also corrects a stale
+  failure-mode description in the G4 catalog entry: the template never scanned
+  the system prompt for `<|think|>`; `enable_thinking` was simply
+  kwarg-only.
 - **Gemma 4 G8 regenerated** against the 2026-07-09 template (7 → 6 hunks;
   the dropped hunk only added a trailing newline Google's file now has).
   Still unmerged upstream — `anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`const`

@@ -341,6 +341,17 @@ Q3.6-12 (Qwen3.6 Anthropic-style message.thinking reasoning support) — ACTIVE
     Alibaba Cloud / Qwen Team. Active; shipped in patched/35B-A3B.jinja.
     Additive — byte-identical for all non-`thinking` inputs.
 
+Q3.6-14 (Qwen3.6 position-free rewrite, minja portability) — ACTIVE
+  Reporter / Fix author : original to this repo. Surfaced during an independent
+    review (gpt-5.6-sol) that ran the shipped template through llama.cpp's minja
+    binary: minja implements no position-returning string method, so the `rfind`
+    calls in Q3.6-3 and Q3.6-5 aborted the render and the shipped template could
+    not run on llama.cpp / LM Studio's GGUF path at all. Reformulated with
+    split/join; byte-identical under jinja2.
+  Template author : Alibaba Cloud / Qwen Team. Active; shipped in patched/.
+  Engine-divergence class : same family as P4 (`| safe`) and the Q3.6-5
+    `.replace()` index-0 hardening. A minja gate now guards the whole repo.
+
 Q3.6-13 (Qwen3.6 tool_call_format="json" Hermes JSON tool calls) — OPT-IN
   Prior art : froggeric (Qwen-Fixed-Chat-Templates v21.3) tool_call_format
     kwarg. Snapshotted at
@@ -371,11 +382,22 @@ G3 (Gemma 4 Apr-2026 official template realignment)
   Authored by Google (HF commit e51e7dc on google/gemma-4-31B-it).
   llama.cpp alignment by aldegr (PRs #21704, #21760, both merged).
 
-G4 (Gemma 4 ENABLE_THINKING / DISABLE_THINKING sentinel)
-  Reporter / Original template author : u/No_Information9314,
+G4 (Gemma 4 thinking-toggle sentinels) — OPT-IN, ships a .patch
+  Reporter / Prior-art author : u/No_Information9314,
     r/LocalLLaMA "Gemma 4 thinking system prompt" (Apr 2026).
   Original template snapshotted at:
     docs/sources/pastebins/W9VxRw09-no_information9314-gemma4-enable_thinking.jinja
+  Fix author : re-specified by this repo (2026-07-20) when the patch was
+    materialized. The shipped form deliberately diverges from the prior art
+    on four points, each following a lesson this repo had already learned:
+    delimited `<|think_on|>` / `<|think_off|>` tokens instead of bare
+    ENABLE_THINKING/DISABLE_THINKING substrings (the P5 -> R3 false-positive
+    lesson, spelled as in Q3.6-5); split|join instead of .replace() (minja
+    index-0 payload drop); support for sequence-form system content; and
+    rightmost-in-text conflict resolution instead of "disable always wins".
+    The legacy bare words are NOT accepted.
+  Template author : Google LLC (Gemma 4 chat template).
+  Status : Opt-in; STACKS ON G1 (apply order G1 -> G4 -> G8).
 
 G5 (Gemma 4 LM Studio thinking-toggle model.yaml workaround)
   Reporter : u/WyattTheSkid, r/LocalLLaMA, Apr 2026.

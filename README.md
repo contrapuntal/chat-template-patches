@@ -48,7 +48,9 @@ pip install -r requirements-test.txt
 pytest -v
 
 # 3) Apply a patched template to your local model directory
-./scripts/apply.sh gemma4 26B-A4B-it /path/to/your/model/dir
+./scripts/apply.sh qwen3.6 35B-A3B /path/to/your/model/dir
+#    (Gemma 4 ships no patched/ stack as of 2026-07-20 — its remaining
+#     patches G1/G8 are opt-in; see templates/gemma4/PATCHES.md)
 
 # 4) Refresh upstream templates from HF (e.g., after a model card update)
 ./scripts/fetch-upstream.sh qwen3.5
@@ -64,11 +66,14 @@ maintaining a patch series lets us:
 3. Retire patches cleanly when upstream merges them — see the **upstream
    status** column in `docs/PATCH-CATALOG.md`.
 
-Several patches in this repo have already been retired: G3 (Gemma 4 Apr-2026
-template alignment) is now upstream in `llama.cpp` and Google's HF templates;
-P2 (Qwen3.5 tool-call type guard) was merged by unsloth in Mar 2026. They
-remain in the catalog as historical context and as a sanity check that future
-upstream regressions don't re-introduce them.
+Several patches in this repo have already been retired: **G7, G9 and G10**
+(Gemma 4) were all fixed by Google's 2026-07-09 template rewrite, which
+emptied the Gemma 4 patched stack entirely; G3 (Gemma 4 Apr-2026 template
+alignment) is upstream in `llama.cpp` and Google's HF templates; P2 (Qwen3.5
+tool-call type guard) was merged by unsloth in Mar 2026. They remain in the
+catalog as historical context, and their tests are **inverted** into
+regression sentinels so a future upstream regression re-surfaces the bug
+instead of silently returning.
 
 ## Render harness — what it tests
 
@@ -125,9 +130,9 @@ See `docs/PATCH-CATALOG.md` for the full table. High-level summary:
 
 | Family | Patches in repo | Of which already upstream | Affecting active runtimes |
 |---|---:|---:|---:|
-| Qwen3.5 | P1–P10, R1–R3, P11, P12 (15 total — all currently catalog-only / deferred) | P2, R1 (partial) | 8 |
-| Qwen3.6 | Q3.6-1 through Q3.6-5 (5 total) | 0 | 5 (Q3.6-5 opt-in for older runtimes; rest active) |
-| Gemma 4 | G1, G2, G4, G5, G7 (5 active; G3, G6 historical) | G3 | 4 |
+| Qwen3.5 | P1–P12, R1–R3 (15 total — all currently catalog-only / deferred) | P2, R1 (partial) | 8 |
+| Qwen3.6 | Q3.6-1 … Q3.6-13 | 0 | 7 active (Q3.6-1…-6, Q3.6-12); Q3.6-7/-9/-10/-13 opt-in; Q3.6-8 watch; Q3.6-11 catalog-only |
+| Gemma 4 | G1–G10 | **G3, G7, G9, G10** | 2 opt-in only (G1, G8) — **no default patched stack** |
 
 ## Contributing
 

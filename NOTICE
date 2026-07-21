@@ -62,48 +62,43 @@ derivative of that prior art in the copyright sense.
 Shipped patches
 ----------------------------------------------------------------------
 
-Patch G7 — Gemma 4 empty-content tool-call assistant turn closure
-  Reporter        : reza-yousefi (GitHub) — Blaizzy/mlx-vlm#1033 + #1034,
-                    Apr 17 2026. The reports describe the failure mode
-                    (infinite tool-call loop on empty assistant content)
-                    but did not include a fix.
-  Fix author      : original to this repo, derived by inspecting the
-                    template's branch logic. Verified by a render harness
-                    fixture that asserts the bug pattern is present in
-                    upstream and absent in patched.
-  Template author : Google LLC (Gemma 4 chat template).
-  Upstream status : open as of fetch date; this patch predates any
-                    upstream resolution.
+RETIRED — Gemma 4 patches G7 / G9 / G10 (fixed upstream 2026-07-09)
+  These three were shipped in templates/gemma4/patched/ until Google's
+  2026-07-09 chat-template rewrite fixed all of them. The .patch files and
+  the patched/ templates were removed on 2026-07-20; Gemma 4 now ships no
+  default stack. Attribution is retained here for the historical record.
 
-Patch G9 — Gemma 4 consecutive-assistant turn open/close balance
-  Reporter        : Reithan (HuggingFace) — google/gemma-4-31B-it
-                    discussion #62 ("Chat Template has a bug"); Google
-                    (@pannaga10) reproduced and escalated. Status OPEN as
-                    of the 2026-05-30 sweep. A fix gist
-                    (Reithan/a7431dc0c0b239688a24087bb25c0002) accompanies
-                    the thread.
-  Fix author      : original to this repo — symmetric forward-scan
-                    mirroring the template's own backward
-                    continue_same_model_turn open-suppression.
-                    Independently reproduced locally against
-                    upstream/31B-it.jinja before authoring.
-  Template author : Google LLC (Gemma 4 chat template).
-  Stacks on       : G7 (same turn-marker close logic).
-  Upstream status : open as of fetch date; this patch predates any
-                    upstream resolution.
+  Patch G7 — Gemma 4 empty-content tool-call assistant turn closure
+    Reporter        : reza-yousefi (GitHub) — Blaizzy/mlx-vlm#1033 + #1034,
+                      Apr 17 2026 (failure mode only, no fix).
+    Fix author      : original to this repo, derived from the template's
+                      branch logic.
+    Template author : Google LLC (Gemma 4 chat template).
+    Upstream status : FIXED 2026-07-09 — the turn-close conditional gained
+                      `and not next_nt.found`.
 
-Patch G10 — Gemma 4 preserve_thinking kwarg (default OFF)
-  Reporter        : community (r/LocalLLaMA Gemma 4 12B tool-calling
-                    threads); same failure family as earendil-works/pi#3325
-                    and Qwen3.6's Q3.6-1.
-  Upstream analog : Google PR HF disc #118 ("reasoning preservation"),
-                    UNMERGED as of 2026-06-11 — so G10 is derived, not a
-                    port of a finished upstream template.
-  Fix author      : original to this repo — minimal kwarg gate on the
-                    template's existing current-turn-region guard;
-                    default OFF (byte-identical to upstream unless set).
-  Template author : Google LLC (Gemma 4 chat template).
-  Stacks on       : G7 + G9.
+  Patch G9 — Gemma 4 consecutive-assistant turn open/close balance
+    Reporter        : Reithan (HuggingFace) — google/gemma-4-31B-it
+                      discussion #62; Google (@pannaga10) reproduced and
+                      escalated.
+    Fix author      : original to this repo — symmetric forward-scan
+                      mirroring the template's own backward
+                      continue_same_model_turn open-suppression.
+    Template author : Google LLC (Gemma 4 chat template).
+    Upstream status : FIXED 2026-07-09 — Google shipped a structurally
+                      equivalent forward-scan (`next_nt`) plus a
+                      `continues_into_next` suppression branch.
+
+  Patch G10 — Gemma 4 preserve_thinking kwarg (default OFF)
+    Reporter        : community (r/LocalLLaMA Gemma 4 tool-calling threads);
+                      same failure family as Qwen3.6's Q3.6-1.
+    Upstream analog : Google PR HF disc #118 ("reasoning preservation"),
+                      unmerged at the time G10 was authored.
+    Fix author      : original to this repo — minimal default-OFF kwarg gate.
+    Template author : Google LLC (Gemma 4 chat template).
+    Upstream status : FIXED 2026-07-09 — Google shipped a NATIVE
+                      `preserve_thinking` kwarg with the same default-OFF
+                      contract.
 
 Patch Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
   Reporter        : u/onil_gova (Reddit) — r/LocalLLaMA "PSA: Qwen3.6 ships
@@ -355,9 +350,15 @@ Q3.6-13 (Qwen3.6 tool_call_format="json" Hermes JSON tool calls) — OPT-IN
     patched/. Parser-lock-in escape hatch; froggeric itself reverted a
     JSON-default experiment that broke vLLM's qwen3_coder (v21.1).
 
-G1 (Gemma 4 `is sequence` minijinja crash)
+G1 (Gemma 4 `is sequence` minijinja crash) — OPT-IN, ships a .patch
   Reporter : u/Reaper_9382, r/LocalLLaMA "Fix Gemma 4 MCP tool calls
     broken in LM Studio" (Apr 2026).
+  Status : Opt-in. Ships patches/gemma4/G1-portable-iterable-check.patch
+    (first shipped 2026-07-20; previously catalog-only). Google's
+    2026-07-09 rewrite grew the surface from 3 to 4 `is sequence` sites,
+    so the patch was worth materializing. Byte-identical under jinja2 for
+    normal inputs; additionally fixes a latent dict-valued-`content` crash
+    (jinja2's `sequence` test is true for mappings).
 
 G2 (historical Gemma 4 `<|channel>thought` token leakage)
   Independent fix authors :
@@ -386,9 +387,26 @@ G6 (Gemma 4 tool-calling / system-prompt compliance grab-bag)
   ("Gemma 4 is terrible with system prompts and tools"). Recommendations
   rather than a discrete template patch.
 
-G7 (covered above as a shipped patch).
+G7 / G9 / G10 (Gemma 4) — RETIRED, fixed upstream 2026-07-09
+  Google's 2026-07-09 Gemma 4 template rewrite ("Fixed tool-calling loops,
+  turn closures, and thinking content-ordering") fixed all three:
+    - G7  empty-content tool-call turn closure  -> close conditional gained
+          `and not next_nt.found`
+    - G9  consecutive-assistant turn balance    -> upstream added a
+          structurally equivalent forward-scan + `continues_into_next`
+    - G10 preserve_thinking                     -> upstream added a NATIVE
+          `preserve_thinking` kwarg, same default-OFF contract
+  The .patch files were deleted and templates/gemma4/patched/ removed;
+  Gemma 4 is now catalog-only. Original attribution retained for the
+  historical record: G7 derived here from Blaizzy/mlx-vlm#1033 + #1034;
+  G9 from HF google/gemma-4-31B-it discussion #62; G10 derived as the
+  Gemma analog of Q3.6-1 (HF discussion #118).
+  Inverted regression sentinels remain in tests/test_render.py.
 
-G8 (Gemma 4 tool-declaration JSON Schema robustness)
+G8 (Gemma 4 tool-declaration JSON Schema robustness) — OPT-IN, ships a .patch
+  Status : Still unmerged upstream as of 2026-07-20; patch REGENERATED that
+    date against Google's 2026-07-09 template (7 -> 6 hunks; the dropped
+    hunk only added a trailing newline Google's file now has).
   Reporter / Fix author : sigjhl —
     r/LocalLLaMA "I stumbled on a Gemma 4 chat template bug for tools
     and fixed it" (1syps6i, May 2026). Diagnosis assisted by GPT-5.5-high

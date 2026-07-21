@@ -1,68 +1,59 @@
 # Gemma 4 patched templates
 
-Default stack applied in `patched/` (per-file basis):
+**Gemma 4 currently ships NO default `patched/` templates.** As of Google's
+2026-07-09 template rewrite, every patch that was in the default stack
+(G7, G9, G10) is fixed upstream, so `templates/gemma4/` contains
+`upstream/` only and the family is listed in `CATALOG_ONLY_FAMILIES`
+(`tests/conftest.py`) alongside qwen3.5.
 
-| File | Patches applied | Bytes vs upstream | Notes |
-|---|---|---|---|
-| `patched/26B-A4B-it.jinja` | G7, G9, G10 | +1327 | **G7**: empty-content tool-call infinite-loop close fix. **G9**: balances turn open/close for consecutive assistant messages (orphaned `<turn\|>`). **G10**: `preserve_thinking` kwarg (default OFF) — keeps historical tool-call reasoning; byte-identical to upstream unless set. |
-| `patched/31B-it.jinja` | G7, G9, G10 | +1327 | Same template family as 26B-A4B |
-| `patched/E2B-it.jinja` | G7, G9, G10 | +1327 | Small variant; lacks thinking-channel logic |
-| `patched/E4B-it.jinja` | G7, G9, G10 | +1327 | Same template family as E2B |
+Use Google's stock template unless you hit one of the two opt-in cases below.
 
-G9 stacks on G7, and G10 stacks on G9; all three are applied to the four
-`patched/` files. Reference diffs are representative 26B-A4B-it hunks (identical
-across sizes), each against the prior-stage state:
-`patches/gemma4/G9-consecutive-assistant-turn-balance.patch` (vs G7) and
-`patches/gemma4/G10-preserve-thinking.patch` (vs G7+G9). **G10 is a default-OFF
-kwarg gate** — it ships in `patched/` but changes nothing unless
-`preserve_thinking=true` is passed (so it's listed in the applied stack, not the
-opt-in section, but its *behaviour* is opt-in).
+## Retired — fixed upstream 2026-07-09
 
-Opt-in patches not applied to `patched/`:
+| Patch | What it fixed | How upstream fixed it |
+|---|---|---|
+| **G7** | Empty-content tool-call assistant turn dropped its `<turn\|>` close, causing an agentic loop | Close conditional gained `and not next_nt.found` |
+| **G9** | Two consecutive assistant messages left an orphaned `<turn\|>` (closes > opens) | Upstream added the same forward-scan + a `continues_into_next` suppression branch this repo had derived independently |
+| **G10** | `preserve_thinking` kwarg to retain historical tool-call reasoning | Upstream added a **native** `preserve_thinking` kwarg with the same default-OFF contract |
 
-- **G1** (`is sequence` minijinja gap) — apply only for LM Studio MCP path.
-- **G4** (ENABLE_THINKING/DISABLE_THINKING sentinel) — apply if your client
-  doesn't reliably pass `chat_template_kwargs={"enable_thinking": ...}`.
-- **G8** (sigjhl JSON Schema robustness) — apply when your tools use
-  `anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const` schema patterns
-  (common for Pydantic-v2-generated MCP tools). Pending upstream merge
-  in HF discussion #91; reference patch in
-  `patches/gemma4/G8-jsonschema-robustness.patch`.
+Their catalog entries are kept in `docs/PATCH-CATALOG.md` as historical
+record, and `tests/test_render.py` keeps **inverted sentinels** — tests that
+now assert upstream *stays* fixed, so a future upstream regression
+re-surfaces the bug instead of silently returning.
 
-Historical / configuration-side entries (not template patches):
+## Opt-in patches (apply yourself; none are in a default stack)
 
-- **G2** (channel/thought leakage) — superseded by Google's Apr-2026 update
-  that ships in current `upstream/`.
-- **G3** (Apr-2026 official template realignment) — already in `upstream/`.
-- **G5** (LM Studio thinking-toggle) — `model.yaml` workaround, see
-  `docs/PATCH-CATALOG.md`.
-- **G6** (tool-calling/system-prompt compliance) — runtime version
-  recommendations, see `docs/PATCH-CATALOG.md`.
+| Patch | Apply when |
+|---|---|
+| `patches/gemma4/G1-portable-iterable-check.patch` | You run **minijinja** (LM Studio's MCP path), which has no `sequence` test → `Unknown test: sequence` and every tool call fails. Google's rewrite **grew** this surface from 3 sites to 4. Byte-identical under jinja2 for normal inputs; also fixes a latent dict-valued-`content` crash. |
+| `patches/gemma4/G8-jsonschema-robustness.patch` | Your tools use `anyOf` / `oneOf` / `allOf` / `$ref` / `$defs` / `const`, or `enum` on a non-STRING type (i.e. most Pydantic-v2 / MCP tool schemas). Upstream silently **drops** all of these from the tool declaration. HF discussion #91 still unmerged. |
 
-## Upstream-shipped enhancements (2026-05-06 sync)
-
-The current `upstream/` snapshots include Google's PR #86 (commit
-`145dc25`, "fix(chat_template): update SI and tool call handling"):
-
-- `format_parameters` macro `filter_keys` parameter (suppresses
-  schema-meta keys when recursing into nested mappings without
-  explicit `properties`).
-- Multimodal first-system-message handling (string OR content-parts
-  sequence).
-- `captured_content` / `has_content` refactor of the assistant
-  turn-close logic.
-
-These are pure improvements with no downstream-patch interaction; G7
-remains correct on top of them (the bug G7 fixes is independent of
-how `has_content` is computed — `has_content` is also false for the
-empty-content tool-call case).
-
-## Applying
+Both patches apply cleanly to all five sizes and **stack together** (apply G1
+first, then G8). Each diffs against `templates/gemma4/upstream/<size>.jinja`;
+the reference hunks are taken from `26B-A4B-it` and the affected lines are
+identical across sizes.
 
 ```bash
-# Symlink (recommended — tracks future repo updates):
-./scripts/apply.sh gemma4 26B-A4B-it /Path/to/your/model/dir --symlink
-
-# Copy (snapshot at apply time):
-./scripts/apply.sh gemma4 26B-A4B-it /Path/to/your/model/dir
+# example: minijinja + Pydantic-generated tools
+cp templates/gemma4/upstream/26B-A4B-it.jinja /tmp/gemma4.jinja
+patch /tmp/gemma4.jinja < patches/gemma4/G1-portable-iterable-check.patch
+patch /tmp/gemma4.jinja < patches/gemma4/G8-jsonschema-robustness.patch
 ```
+
+## Tracked sizes
+
+`12B-it`, `26B-A4B-it`, `31B-it` (big family, `ae53464b…`) and
+`E2B-it`, `E4B-it` (small family, `0a2c8073…`). `12B-it` was added
+2026-07-20. The `-assistant` model flavours ship no standalone
+`chat_template.jinja` and are out of scope.
+
+## Historical / configuration-side entries (not template patches)
+
+- **G2** (channel/thought leakage) — superseded by Google's Apr-2026 update.
+- **G3** (Apr-2026 official template realignment) — in `upstream/`.
+- **G4** (ENABLE_THINKING/DISABLE_THINKING sentinel) — opt-in, catalog-only;
+  apply if your client can't pass `chat_template_kwargs`.
+- **G5** (LM Studio thinking-toggle) — `model.yaml` workaround.
+- **G6** (tool-calling/system-prompt compliance) — runtime recommendations.
+
+See `docs/PATCH-CATALOG.md` §§ G1–G10 and `templates/gemma4/PROVENANCE.md`.

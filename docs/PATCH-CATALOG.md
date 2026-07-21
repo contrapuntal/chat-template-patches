@@ -47,16 +47,16 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | Q3.6-8 | Qwen3.6 | froggeric forward-tracked `consecutive_failures` two-tier tool-error escalation (seed a `<think>` correction on 1st failure, out-of-band directive on 2nd+) | **watch** (NOT implemented; gated behind an eval — `tests/fixtures/qwen36_repeated_tool_failures.json` + `docs/evals/Q3.6-8-error-escalation.md`). **froggeric v18 now supplies the structural FP-detection the gate's false-positive cases demand** (`"error":`/`Exception:`/`Traceback`/`command not found`, not substrings); **v21.1 further scopes detection to the first 80 chars of the tool response + adds `err!`/`fatal:`** — de-risks FP concern #1; prefix-symmetry concern #2 still open. | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v15/v16 → **v18/v20/v21.3 snapshotted**) | Qwen3.6-35B-A3B |
 | Q3.6-12 | Qwen3.6 | Accept Anthropic-style `message.thinking` reasoning payloads as an alternate reasoning source (Claude Code / Anthropic-compat clients) | **active** (shipped in default `patched/`; stacks on Q3.6-6) | community-tracker (froggeric `Qwen-Fixed-Chat-Templates` v21.1 **snapshotted** at `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja`) | Qwen3.6-35B-A3B |
 | Q3.6-13 | Qwen3.6 | froggeric `tool_call_format="json"` kwarg — opt-in Hermes-JSON tool-call format (default stays native XML) | **opt-in** (ships a `.patch`, NOT in default `patched/`; parser-lock-in / grammar-shift — default XML path unchanged) | community-tracker (froggeric v21.3 **snapshotted**) | Qwen3.6-35B-A3B |
-| G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio MCP path only) | community-ephemeral (Reddit thread) | Gemma 4 26B-A4B-it, 31B-it |
+| G1 | Gemma 4 | Replace `is sequence` test with portable iterable check | **opt-in** (LM Studio / minijinja MCP path). **Now ships a `.patch`** (2026-07-20) — Google's 2026-07-09 rewrite **grew the surface 3→4 sites**. Also fixes a latent dict-`content` crash. | community-ephemeral (Reddit thread) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 | G2 | Gemma 4 | Suppress `<\|channel>thought` token leakage in clients that don't consume reasoning channels | **historical** (superseded by G3 upstream + G7 here) | community-tracker (asfbrz96 GitHub repo + aldegr gist; both **snapshotted** at `docs/sources/github-snapshots/asf0-...` and `docs/sources/gists/aldehir-...`) | Gemma 4 26B-A4B-it (Apr-pre-update template) |
 | G3 | Gemma 4 | Apr 2026 official template realignment | **upstream** (Google HF + llama.cpp #21704 #21760) | publisher | Gemma 4 26B-A4B-it, 31B-it |
 | G4 | Gemma 4 | `ENABLE_THINKING` / `DISABLE_THINKING` system-message sentinel | **opt-in** | community-ephemeral (Reddit + pastebin; **snapshotted** at `docs/sources/pastebins/W9VxRw09-...jinja`) | Gemma 4 26B-A4B-it, 31B-it |
 | G5 | Gemma 4 | LM Studio thinking-toggle `model.yaml` workaround | **active** (config-side, not a template patch) | community-ephemeral (Reddit; example yaml **snapshotted** at `docs/sources/pastebins/HDt34yA8-...yaml`) | Gemma 4 (LM Studio non-community quants) |
 | G6 | Gemma 4 | Tool-calling / system-prompt compliance grab-bag | **active** (open upstream; configuration recommendations rather than a discrete template patch) | community-ephemeral (multiple Reddit threads) | Gemma 4 26B-A4B-it primarily |
-| G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **active** | derived (bug report: upstream-tracker `Blaizzy/mlx-vlm#1033` + `#1034`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
-| G8 | Gemma 4 | JSON Schema robustness in tool declarations (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type) | **opt-in** (pending upstream merge — HF disc #91) | community-tracker (HF discussion + Reddit; **snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja`) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
-| G9 | Gemma 4 | Balance turn open/close for consecutive assistant messages — the open-suppression (`continue_same_model_turn`) left an orphaned `<turn\|>` close; G9 adds the symmetric forward-scan to defer the prior message's close | **active** | upstream-tracker (HF `google/gemma-4-31B-it` disc #62, Google-reproduced + OPEN; **reproduced locally**) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
-| G10 | Gemma 4 | `preserve_thinking` kwarg — render historical tool-call reasoning (not just the current-turn region), curing multi-step agentic `arguments: {}` collapse | **active**, but **default-OFF** kwarg gate (byte-identical to upstream unless `preserve_thinking=true`) | derived (Gemma analog of Q3.6-1; upstream PR HF disc #118 **unmerged**, so derived not ported) | Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+| G7 | Gemma 4 | Empty-content tool-call assistant turn closure | **upstream** (fixed by Google 2026-07-09; patch retired, `.patch` deleted). Kept as an **inverted regression sentinel** in `tests/test_render.py`. | derived (bug report: upstream-tracker `Blaizzy/mlx-vlm#1033` + `#1034`) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+| G8 | Gemma 4 | JSON Schema robustness in tool declarations (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type) | **opt-in** (still unmerged upstream — HF disc #91; **patch regenerated 2026-07-20** against the 2026-07-09 template, 7→6 hunks) | community-tracker (HF discussion + Reddit; **snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja`) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+| G9 | Gemma 4 | Balance turn open/close for consecutive assistant messages — the open-suppression (`continue_same_model_turn`) left an orphaned `<turn\|>` close; G9 adds the symmetric forward-scan to defer the prior message's close | **upstream** (fixed by Google 2026-07-09 with a structurally equivalent forward-scan + `continues_into_next`; patch retired). Kept as an **inverted regression sentinel**. | upstream-tracker (HF `google/gemma-4-31B-it` disc #62, Google-reproduced; **reproduced locally**) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+| G10 | Gemma 4 | `preserve_thinking` kwarg — render historical tool-call reasoning (not just the current-turn region), curing multi-step agentic `arguments: {}` collapse | **upstream** (Google shipped a **native** `preserve_thinking` kwarg 2026-07-09 with the same default-OFF contract; patch retired). Kept as an **inverted regression sentinel**. | derived (Gemma analog of Q3.6-1; upstream PR HF disc #118) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 
 ---
 
@@ -1220,6 +1220,51 @@ repo does not ship the truncation kwargs (Q3.6-11) at all.
 **Provenance.** froggeric v21.3 README + template (**snapshotted** at
 `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v21.3.jinja`).
 Provenance tier: community-tracker.
+
+---
+
+### Gemma 4 — 2026-07-09 upstream sync and the G7 / G9 / G10 retirement
+
+On **2026-07-09** Google published a substantial Gemma 4 chat-template
+rewrite, self-documented in a new header comment: *"Fixed tool-calling loops,
+turn closures, and thinking content-ordering."* This repo synced to it on
+**2026-07-20** (see `templates/gemma4/PROVENANCE.md`), bumping the big family
+`94899c0f` → `ae53464b` and the small family `33204f1a` → `0a2c8073`, and
+adding the previously-untracked **`12B-it`** size.
+
+**The rewrite fixed every patch in the Gemma 4 default stack**, so
+`templates/gemma4/patched/` was deleted and the family is now **catalog-only**
+(`CATALOG_ONLY_FAMILIES` in `tests/conftest.py`):
+
+| Patch | How upstream fixed it |
+|---|---|
+| **G7** | The turn-close conditional gained `and not next_nt.found`, so an empty-content tool-call turn now closes. |
+| **G9** | Upstream added a forward-scan (`next_nt`) and a `continues_into_next` suppression branch — structurally the same fix G9 derived independently months earlier. |
+| **G10** | Upstream added a **native** `preserve_thinking` kwarg with the same default-OFF contract (`thinking_gate`). |
+
+**How the retirement was detected.** The repo's Gemma tests were written as
+*upstream sentinels* (`test_g7_upstream_exhibits_bug`,
+`test_g9_upstream_imbalanced_on_consecutive_assistant`), each documented to
+fail if upstream ever shipped the fix. Swapping the new template in made all
+eight fail immediately — no manual audit required. G10 was confirmed by direct
+render (`preserve_thinking=True` now retains historical reasoning on stock
+upstream; it did not before).
+
+**Those tests are now INVERTED** rather than deleted: they assert upstream
+*stays* fixed, and their failure messages say to un-retire the patch. A future
+Google regression therefore re-surfaces the bug here.
+
+**Other upstream changes in the same rewrite** (none previously cataloged):
+`format_argument` `is none` → `null`; an empty-`messages` guard (crash fix);
+multimodal parts inside tool responses plus `image_url` / `input_audio`
+aliases; defensive `.get()` access; O(1) `prev_non_tool_role` tracking
+replacing an O(n) backward scan; and a new generation-prompt branch emitting
+`<|channel>thought` after a tool response when `enable_thinking` is set.
+
+**What survived.** G1 and G8 are still required and now both ship `.patch`
+files — see their entries below. G1's surface *grew* (3 → 4 `is sequence`
+sites); G8 was regenerated (7 → 6 hunks, the dropped hunk being an
+obsolete trailing-newline fix).
 
 ---
 

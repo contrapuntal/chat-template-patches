@@ -34,6 +34,30 @@ documented in `docs/PATCH-CATALOG.md`.
 
 ### Changed
 
+- **Gemma 4 upstream sync (2026-07-20) — G7 / G9 / G10 RETIRED.** Bumped all
+  `upstream/*.jinja` snapshots to Google's **2026-07-09** template rewrite
+  ("Fixed tool-calling loops, turn closures, and thinking content-ordering").
+  Big-family SHAs `94899c0f` → `ae53464b`; small-family `33204f1a` →
+  `0a2c8073`. Added the previously-untracked **`12B-it`** size (big family),
+  bringing tracked sizes to five.
+  The rewrite fixes **every patch in the Gemma 4 default stack**: **G7**
+  (close conditional gained `and not next_nt.found`), **G9** (upstream added
+  a structurally equivalent forward-scan + `continues_into_next`), and
+  **G10** (upstream added a *native* `preserve_thinking` kwarg with the same
+  default-OFF contract). All three `.patch` files and the whole
+  `templates/gemma4/patched/` set were removed; `gemma4` joins `qwen3.5` in
+  `CATALOG_ONLY_FAMILIES`. The retirement was detected automatically by the
+  repo's upstream-sentinel tests, which are now **inverted** — they assert
+  upstream *stays* fixed so a regression re-surfaces the bug.
+- **Gemma 4 G1 now ships a `.patch`** (`G1-portable-iterable-check.patch`).
+  Still required for minijinja (LM Studio MCP); Google's rewrite **grew** the
+  surface from 3 to 4 `is sequence` sites. Byte-identical under jinja2 for
+  normal inputs, and additionally fixes a latent dict-valued-`content` crash
+  (jinja2's `sequence` test is true for mappings).
+- **Gemma 4 G8 regenerated** against the 2026-07-09 template (7 → 6 hunks;
+  the dropped hunk only added a trailing newline Google's file now has).
+  Still unmerged upstream — `anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`const`
+  remain silently dropped from tool declarations.
 - **Gemma 4 upstream sync (2026-05-06).** Bumped all four
   `upstream/*.jinja` snapshots to Google's commit `145dc25` (PR #86,
   "fix(chat_template): update SI and tool call handling"). Big-variant

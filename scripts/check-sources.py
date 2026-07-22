@@ -28,6 +28,10 @@ Classification
             tier on this alone; verify by hand.
   ERROR     network/other failure. Not a finding by itself; re-run.
 
+Acknowledged rows (`~~url~~` for dead, the word "gated" for blocked) report as
+KNOWN-GONE / KNOWN-BLOCKED and do NOT fail the run — otherwise the first dead
+link makes the check fail forever and it stops being read.
+
 Exit status: 0 when there are no findings (GONE / CHANGED), 1 otherwise.
 
 Usage:  scripts/check-sources.py [--timeout SECONDS] [--quiet]
@@ -91,11 +95,20 @@ def parse_manifest(text: str) -> list[dict]:
         u = URL_IN_CELL.search(cell)
         if not u:
             continue
-        url = u.group(0).rstrip(").,`")
+        url = u.group(0).rstrip(").,`~*")
+        # A row may ACKNOWLEDGE a known condition so it stops re-alarming:
+        #   ~~url~~   -> the source is known dead; the snapshot is now the record
+        #   "gated"   -> the host is known to block automated re-fetch
+        # Anything not acknowledged is NEW decay and remains a finding. Without
+        # this the checker exits non-zero forever after the first dead link,
+        # and a check that always fails is a check nobody reads.
+        cell_l = cell.lower()
         rows.append({
             "file": m.group("file"),
             "sha": m.group("sha"),
             "url": url,
+            "ack_dead": "~~" in cell,
+            "ack_gated": "gated" in cell_l,
             # a row annotated "as of <date>" is knowingly tracking a moving ref
             "moving": bool(PINNED.search(url)) is False or "as of" in cell.lower(),
             "pinned": bool(PINNED.search(url)),
@@ -132,7 +145,8 @@ def main() -> int:
 
     findings: list[str] = []
     counts = {"OK": 0, "MOVED": 0, "CHANGED": 0, "GONE": 0,
-              "BLOCKED": 0, "ERROR": 0, "MISSING": 0, "NOCHECK": 0}
+              "BLOCKED": 0, "ERROR": 0, "MISSING": 0, "NOCHECK": 0,
+              "KNOWN-GONE": 0, "KNOWN-BLOCKED": 0}
     print(f"Source snapshot check — {len(rows)} recorded snapshot(s)\n")
 
     for row in rows:
@@ -153,21 +167,33 @@ def main() -> int:
         digest, err = fetch(target, args.timeout)
         if digest is None:
             if err.startswith(("HTTP 404", "HTTP 410")):
-                counts["GONE"] += 1
-                findings.append(
-                    f"GONE     {label} — {err} at {target}\n"
-                    f"           -> source DELETED; downgrade its provenance tier in"
-                    f" docs/PATCH-CATALOG.md"
-                )
-                print(f"  GONE     {label}  ({err})")
+                if row["ack_dead"]:
+                    counts["KNOWN-GONE"] += 1
+                    if not args.quiet:
+                        print(f"  known-gone {label}  ({err}, recorded)")
+                else:
+                    counts["GONE"] += 1
+                    findings.append(
+                        f"GONE     {label} — {err} at {target}\n"
+                        f"           -> source DELETED; record it in"
+                        f" docs/sources/README.md (strike the URL through with ~~...~~)"
+                        f" and downgrade the provenance tier in docs/PATCH-CATALOG.md"
+                    )
+                    print(f"  GONE     {label}  ({err})")
             elif err.startswith(("HTTP 401", "HTTP 403", "HTTP 429")):
-                counts["BLOCKED"] += 1
-                findings.append(
-                    f"BLOCKED  {label} — {err} at {target}\n"
-                    f"           -> host gates automated access; verify by hand. The local"
-                    f" snapshot may now be the only machine-readable copy."
-                )
-                print(f"  BLOCKED  {label}  ({err})")
+                if row["ack_gated"]:
+                    counts["KNOWN-BLOCKED"] += 1
+                    if not args.quiet:
+                        print(f"  known-gated {label}  ({err}, recorded)")
+                else:
+                    counts["BLOCKED"] += 1
+                    findings.append(
+                        f"BLOCKED  {label} — {err} at {target}\n"
+                        f"           -> host gates automated access; verify by hand, then"
+                        f" note 'gated' in the row so it stops re-alarming. The local"
+                        f" snapshot may be the only machine-readable copy."
+                    )
+                    print(f"  BLOCKED  {label}  ({err})")
             else:
                 counts["ERROR"] += 1
                 print(f"  ERROR    {label}  ({err})")
@@ -196,7 +222,8 @@ def main() -> int:
         for f in findings:
             print("  " + f)
         return 1
-    print("\nNo findings — every snapshot still resolves and pinned content is intact.")
+    print("\nNo NEW findings — every snapshot either resolves, or its decay is "
+          "already recorded in docs/sources/README.md.")
     return 0
 
 

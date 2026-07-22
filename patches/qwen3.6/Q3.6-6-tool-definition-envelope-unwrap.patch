@@ -16,8 +16,14 @@ spec when the full envelope shape is present:
         {%- set tool = tool.function %}
     {%- endif %}
 
-Shape-strict on purpose. The guard requires BOTH `type == "function"` AND a
-mapping `function` member — not merely `tool.function is defined`. A tool that
+Shape-strict on purpose. The guard requires `type == "function"`, a mapping
+`function` member, AND an inner `name` — not merely `tool.function is defined`.
+The inner-`name` requirement was added 2026-07-22 after review observed that a
+tool carrying meaningful OUTER `name`/`description` alongside an unrelated
+mapping `function` was unwrapped down to that member, silently discarding the
+outer fields. A real OpenAI envelope always names its function, so requiring it
+costs nothing; anything else now renders whole — noisy but lossless, which is
+the safer failure for a malformed declaration. A tool that
 happens to carry an unrelated top-level key named `function` (or a tool that
 isn't a mapping at all) does NOT match the envelope shape and is emitted
 unchanged. This is stricter than:
@@ -48,7 +54,7 @@ Q3.6-5-applied state.
      {%- for tool in tools %}
          {{- "\n" }}
 +        {#- Q3.6-6: unwrap the OpenAI tool-definition envelope ({"type":"function","function":{...}}) to the inner function spec. Shape-strict — requires type=="function" AND a mapping `function` — so a tool that merely carries a top-level `function` key (or is not a mapping) is left untouched. Analogous to the looser unwrap this template does at the tool-CALL site. -#}
-+        {%- if tool is mapping and tool.type is defined and tool.type == 'function' and tool.function is mapping %}
++        {%- if tool is mapping and tool.type is defined and tool.type == 'function' and tool.function is mapping and tool.function.name is defined %}
 +            {%- set tool = tool.function %}
 +        {%- endif %}
          {{- tool | tojson }}

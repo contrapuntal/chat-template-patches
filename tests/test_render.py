@@ -696,9 +696,17 @@ def test_q36_1_patched_keeps_history_think_by_default(template_pairs) -> None:
 
 
 def test_q36_1_patched_respects_explicit_false(template_pairs) -> None:
-    """Critical: even after flipping the default, passing
-    `preserve_thinking=False` explicitly must still disable preservation.
-    This protects the opt-out path."""
+    """Critical: even after flipping the default, `preserve_thinking=False`
+    must still drop HISTORICAL reasoning.
+
+    Scope note (corrected 2026-07-22): this is not a total opt-out, and never
+    was. The guard is `(preserve_thinking...) or (loop.index0 >
+    ns.last_query_index)`, so reasoning in the CURRENT-turn region — after the
+    last user message — is preserved regardless of the kwarg. That clause is
+    inherited from upstream and is deliberate: an in-flight tool loop needs its
+    own reasoning. Q3.6-1 only flipped the polarity of the first clause.
+    `test_q36_1_explicit_false_still_keeps_current_turn_region` pins the other
+    half."""
     pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
     if not pair.patched_exists:
         pytest.skip("patched 35B-A3B not present")
@@ -707,7 +715,34 @@ def test_q36_1_patched_respects_explicit_false(template_pairs) -> None:
     out = render(pair.patched, payload)
     assert "HISTORICAL_REASONING_MARKER" not in out, (
         "patched Qwen3.6 with preserve_thinking=False leaked historical "
-        "reasoning — the opt-out escape hatch is broken"
+        "historical reasoning — the opt-out escape hatch is broken"
+    )
+
+
+def test_q36_1_explicit_false_still_keeps_current_turn_region(template_pairs) -> None:
+    """The other half of the opt-out's true scope: with
+    `preserve_thinking=False`, reasoning AFTER the last user message is still
+    rendered, matching upstream. Pinned so the documented scope stays honest."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    msgs = [
+        {"role": "user", "content": "U0"},
+        {"role": "assistant", "content": "a", "reasoning_content": "HIST_REASON"},
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "b", "reasoning_content": "CURRENT_REASON"},
+    ]
+    payload = {"messages": msgs, "preserve_thinking": False,
+               "add_generation_prompt": False}
+    out = render(pair.patched, payload)
+    assert "HIST_REASON" not in out, f"history not dropped:\n{out!r}"
+    assert "CURRENT_REASON" in out, (
+        f"current-turn-region reasoning was dropped — that clause is inherited "
+        f"from upstream and should survive preserve_thinking=False.\n{out!r}"
+    )
+    up = render(pair.upstream, payload)
+    assert ("CURRENT_REASON" in up) == ("CURRENT_REASON" in out), (
+        "patched and upstream disagree on the current-turn region"
     )
 
 
@@ -1359,6 +1394,35 @@ def test_q36_6_patched_does_not_unwrap_toplevel_function_key(template_pairs) -> 
     )
     assert "TOPLEVEL_FUNCTION_KEY_MARKER" in block, (
         f"Q3.6-6 dropped the non-envelope tool's body. <tools>:\n{block!r}"
+    )
+
+
+def test_q36_6_requires_an_inner_function_name(template_pairs) -> None:
+    """The unwrap requires an inner `name`, so a declaration carrying meaningful
+    OUTER fields alongside an unrelated mapping `function` is NOT stripped down
+    to that member. A real OpenAI envelope always names its function; anything
+    else renders whole — noisy but lossless, the safer failure for malformed
+    input. (Tightened 2026-07-22 after review.)"""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    base = load_fixture("qwen36_tool_envelope_wrap")
+    payload = {**base, "tools": [{
+        "type": "function",
+        "name": "OUTER_NAME_MARKER",
+        "description": "OUTER_DESC_MARKER",
+        "function": {"note": "UNRELATED_MEMBER"},
+    }]}
+    block = _tools_block(render(pair.patched, payload))
+    assert "OUTER_NAME_MARKER" in block and "OUTER_DESC_MARKER" in block, (
+        f"Q3.6-6 unwrapped a declaration whose `function` is not a function "
+        f"spec, discarding its outer fields.\n<tools>:\n{block!r}"
+    )
+    # a genuine envelope must still unwrap
+    ok = {**base}
+    block_ok = _tools_block(render(pair.patched, ok))
+    assert '"function":' not in block_ok, (
+        f"Q3.6-6 stopped unwrapping a real envelope.\n<tools>:\n{block_ok!r}"
     )
 
 

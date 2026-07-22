@@ -427,6 +427,17 @@ template falls through to the same cache-thrashing path that Qwen3.5
 exhibited (R1). Qwen explicitly recommends `preserve_thinking=true` for
 agentic flows; the model card itself documents this.
 
+**Scope of the opt-out (corrected 2026-07-22).** `preserve_thinking=False`
+drops **historical** reasoning only. The guard is
+`(preserve_thinking...) or (loop.index0 > ns.last_query_index)`, so reasoning in
+the **current-turn region** — after the last user message — is rendered
+regardless of the kwarg. That second clause is inherited from upstream and is
+deliberate (an in-flight tool loop needs its own reasoning); Q3.6-1 only flips
+the polarity of the first. Earlier wording here and in the test called it a full
+opt-out, which was wrong. Both halves are now pinned:
+`test_q36_1_patched_respects_explicit_false` and
+`test_q36_1_explicit_false_still_keeps_current_turn_region`.
+
 **Fix.** Flip the default polarity so the patch behaves correctly when no
 kwarg is passed:
 ```

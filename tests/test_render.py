@@ -288,18 +288,31 @@ def test_g1_is_render_equivalent_under_jinja2(template_pairs, size: str) -> None
 
 
 @pytest.mark.parametrize("size", GEMMA4_SIZES)
-def test_g1_fixes_dict_content_crash(template_pairs, size: str) -> None:
-    """Deliberate behaviour change: jinja2's `sequence` test is true for
-    MAPPINGS, so a dict-valued `content` made upstream iterate the dict's
-    string keys and raise. G1's `is not mapping` guard renders instead."""
+def test_g1_dict_content_stops_raising_but_drops_text(template_pairs, size: str) -> None:
+    """Pin what G1 ACTUALLY does with a dict-valued `content`, which is not the
+    same as fixing it.
+
+    jinja2's `sequence` test is true for mappings, so upstream iterated the
+    dict's string keys and raised. G1's `is not mapping` guard — which it needs
+    for minja portability regardless — makes the render succeed, but the dict's
+    text does NOT reach the prompt: the turn renders empty. That is a trade of a
+    loud failure for a silent one, so it is pinned here rather than advertised
+    as a fix. A dict-valued `content` is malformed input (the spec allows a
+    string or a list of parts); callers should send one of those."""
     pair = _find_pair(template_pairs, "gemma4", size)
     src = pair.upstream.read_text()
     applied = _apply_gemma_patch(src, G1_PATCH)
-    payload = {"messages": [{"role": "user", "content": {"type": "text", "text": "D"}}]}
+    payload = {"messages": [
+        {"role": "user", "content": {"type": "text", "text": "DICT_TEXT_MARKER"}}]}
     with pytest.raises(Exception):
         _render_str(src, payload)
     out = _render_str(applied, payload)  # must not raise
     assert "<|turn>user" in out, f"G1 dict-content render looks wrong on {size}:\n{out!r}"
+    assert "DICT_TEXT_MARKER" not in out, (
+        f"G1 now PRESERVES dict-valued content text on {size}. That is an "
+        f"improvement over the pinned behaviour — update this test and the "
+        f"G1 catalog entry, which documents the text as dropped.\n{out!r}"
+    )
 
 
 @pytest.mark.parametrize("size", GEMMA4_SIZES)
@@ -1285,6 +1298,13 @@ def test_q36_6_patched_unwraps_tool_envelope(template_pairs) -> None:
         "Q3.6-6 broken — inner function spec not emitted at top level. "
         f"<tools> block:\n{block!r}"
     )
+    # The WHOLE inner spec must survive. A mutant that unwrapped to just
+    # {name, description} passed every other Q3.6-6 assertion while silently
+    # dropping `parameters` — the part the model needs to call the tool.
+    assert '"parameters"' in block, (
+        "Q3.6-6 dropped `parameters` while unwrapping — the model cannot call "
+        f"a tool without them.\n<tools> block:\n{block!r}"
+    )
 
 
 def test_q36_6_patched_passes_through_unwrapped_tool(template_pairs) -> None:
@@ -1930,8 +1950,13 @@ def test_q36_13_patch_applies_and_default_is_byte_identical(template_pairs) -> N
                 {"function": {"name": "w", "arguments": {"c": "SF"}}},
                 {"function": {"name": "w", "arguments": {"c": "NYC"}}}]}],
     }
+    TOOLS = [{"type": "function", "function": {
+        "name": "w", "parameters": {"type": "object", "properties": {}}}}]
     for name, msgs in convs.items():
-        for extra in ({}, {"tool_call_format": "xml"}):
+        # WITH tools too: the instruction block only renders when tools are
+        # present, so a tools-free comparison cannot see changes to it.
+        for extra in ({}, {"tool_call_format": "xml"},
+                      {"tools": TOOLS}, {"tools": TOOLS, "tool_call_format": "xml"}):
             assert _render_str(src, {"messages": msgs, **extra}) == \
                    _render_str(applied, {"messages": msgs, **extra}), (
                 f"Q3.6-13 changed the default XML render ({name}, extra={extra})"
@@ -1972,10 +1997,19 @@ def test_q36_13_json_mode_emits_hermes_shape(template_pairs) -> None:
     # emits it raw, producing invalid JSON).
     import json
     import re
+    # EVERY argument shape must yield valid JSON. A plain non-JSON string used
+    # to be spliced in raw -> {"arguments": not-json}, which json.loads rejects.
+    # Strings that look like a pre-serialized container pass through; anything
+    # else is JSON-encoded.
     for args, expect in [
         ({"city": "SF"}, {"name": "w", "arguments": {"city": "SF"}}),
         ('{"c": "SF"}', {"name": "w", "arguments": {"c": "SF"}}),
+        ("[1,2]", {"name": "w", "arguments": [1, 2]}),
+        ("not-json", {"name": "w", "arguments": "not-json"}),
+        ('{"broken": ', {"name": "w", "arguments": '{"broken":'}),
+        ('plain "quoted"', {"name": "w", "arguments": 'plain "quoted"'}),
         ("   \n\t ", {"name": "w", "arguments": {}}),
+        ("", {"name": "w", "arguments": {}}),
         (None, {"name": "w", "arguments": {}}),
     ]:
         msgs_v = [
@@ -2022,13 +2056,20 @@ def _minja_parses(src: str) -> tuple[bool, str]:
         r = subprocess.run([MINJA_BIN, "--template-file", str(f)],
                            capture_output=True, text=True)
     out = r.stdout + r.stderr
-    if "Analysis failed" in out:
+    # Honour BOTH signals. Matching only on the literal phrase meant a crash,
+    # a non-zero exit with different wording, or an empty run all counted as
+    # success — the gate reported healthy for templates it never rendered.
+    if r.returncode != 0 or "Analysis failed" in out:
         detail = ""
         for line in out.splitlines():
-            if "Error:" in line:
+            if "Error:" in line or "error:" in line:
                 detail = line.strip()
                 break
+        if not detail and r.returncode != 0:
+            detail = f"exit code {r.returncode}"
         return False, detail or "Analysis failed"
+    if "ANALYSIS COMPLETE" not in out:
+        return False, "analyzer produced no completion marker"
     return True, ""
 
 
@@ -2126,6 +2167,14 @@ KNOWN_DIVERGENCES = {
     # jinja2's `sequence` test is true for mappings; minja's is not. This is why
     # G1's dict-content crash fix is a JINJA2-scoped concern (see § G1).
     "is_sequence_dict": ("Y", "N"),
+    # minja's `trim` strips ASCII whitespace only; jinja2 also strips Unicode
+    # whitespace. Consequences observed in the shipped Qwen3.6 template: a
+    # reasoning_content / string tool-argument / post-sentinel system block
+    # consisting solely of NBSP is emptied by jinja2 but survives under minja,
+    # producing a whitespace-only <think> wrapper, function body, or system
+    # turn there. Low impact, but it is a genuine engine divergence.
+    "trim_nbsp": ("[x]", "[\u00a0x\u00a0]"),
+    "trim_emsp": ("[x]", "[\u2003x\u2003]"),
 }
 
 CONSTRUCT_PROBES = {
@@ -2151,6 +2200,9 @@ CONSTRUCT_PROBES = {
     "tilde_concat": "{{- 'a' ~ 1 ~ 'b' -}}",
     "namespace_loop": "{%- set n=namespace(v=0) -%}{%- for i in [1,2] -%}{%- set n.v=n.v+i -%}{%- endfor -%}{{- n.v -}}",
     "trim": "{{- '  x  '|trim -}}",
+    # minja's trim is ASCII-only; jinja2 strips Unicode whitespace too.
+    "trim_nbsp": "{%- set s = '\u00a0x\u00a0' -%}{{- '['~(s|trim)~']' -}}",
+    "trim_emsp": "{%- set s = '\u2003x\u2003' -%}{{- '['~(s|trim)~']' -}}",
     "default_filter": "{{- undef|default('D') -}}",
     "in_operator": "{{- 'Y' if 'b' in 'abc' else 'N' -}}",
     "bool_render": "{{- (1==1) -}}",
@@ -2231,3 +2283,103 @@ def test_tojson_escaping_divergence_is_an_injection_vector() -> None:
         f"minja now escapes the marker ({mj!r}) — the injection vector is gone; "
         f"update docs/PATCH-CATALOG.md and KNOWN_DIVERGENCES."
     )
+
+
+# ---------------------------------------------------------------------------
+# Content preservation — the most basic property, and the one the suite missed
+# ---------------------------------------------------------------------------
+
+# Mutation testing (gpt-5.6-sol, 2026-07-22) showed the whole 228-test suite
+# passing with the shipped Qwen3.6 template mutated to DROP assistant content:
+#   {{- '<|im_start|>' + message.role + '\n' + content }}  ->  ... + '\n' }}
+# and again with Q3.6-3's `</thinking>` branch mutated to `set content = ''`.
+# Every patch had a test; nothing asserted the obvious invariant that a
+# message's text actually reaches the prompt. These tests assert exactly that.
+
+CONTENT_SHAPES = {
+    "plain assistant": [
+        {"role": "user", "content": "USER_MARKER_1"},
+        {"role": "assistant", "content": "ASSISTANT_MARKER_1"},
+        {"role": "user", "content": "USER_MARKER_2"},
+    ],
+    "assistant with reasoning": [
+        {"role": "user", "content": "USER_MARKER_1"},
+        {"role": "assistant", "content": "ASSISTANT_MARKER_1",
+         "reasoning_content": "REASON_MARKER_1"},
+        {"role": "user", "content": "USER_MARKER_2"},
+    ],
+    "inline think close": [
+        {"role": "user", "content": "USER_MARKER_1"},
+        {"role": "assistant", "content": "<think>REASON_MARKER_1</think>ASSISTANT_MARKER_1"},
+        {"role": "user", "content": "USER_MARKER_2"},
+    ],
+    "inline thinking hallucination": [
+        {"role": "user", "content": "USER_MARKER_1"},
+        {"role": "assistant", "content": "<think>REASON_MARKER_1</thinking>ASSISTANT_MARKER_1"},
+        {"role": "user", "content": "USER_MARKER_2"},
+    ],
+    "system + tool round trip": [
+        {"role": "system", "content": "SYSTEM_MARKER_1"},
+        {"role": "user", "content": "USER_MARKER_1"},
+        {"role": "assistant", "content": "ASSISTANT_MARKER_1", "tool_calls": [
+            {"function": {"name": "f", "arguments": {"k": "ARG_MARKER_1"}}}]},
+        {"role": "tool", "content": "TOOL_MARKER_1"},
+        {"role": "assistant", "content": "ASSISTANT_MARKER_2"},
+    ],
+}
+
+
+@pytest.mark.parametrize("shape", sorted(CONTENT_SHAPES))
+@pytest.mark.parametrize("kwargs", [{}, {"preserve_thinking": True},
+                                    {"preserve_thinking": False}])
+def test_qwen36_every_message_content_reaches_the_prompt(
+    template_pairs, shape: str, kwargs: dict
+) -> None:
+    """Every marker in every message must appear in the rendered prompt.
+
+    Reasoning markers are exempt when `preserve_thinking=False` (that is the
+    documented purpose of the kwarg); everything else is unconditional."""
+    pair = _find_pair(template_pairs, "qwen3.6", "35B-A3B")
+    if not pair.patched_exists:
+        pytest.skip("patched 35B-A3B not present")
+    msgs = CONTENT_SHAPES[shape]
+    out = render(pair.patched, {"messages": msgs, **kwargs})
+    for msg in msgs:
+        content = msg.get("content") or ""
+        for marker in re.findall(r"[A-Z]+_MARKER_\d", content):
+            if marker.startswith("REASON_") and kwargs.get("preserve_thinking") is False:
+                continue
+            assert marker in out, (
+                f"{marker} from a {msg['role']} message was DROPPED "
+                f"(shape={shape}, kwargs={kwargs}).\n{out!r}"
+            )
+        for tc in msg.get("tool_calls") or []:
+            args = tc["function"]["arguments"]
+            if isinstance(args, dict):
+                for v in args.values():
+                    assert str(v) in out, (
+                        f"tool-call argument {v!r} was DROPPED "
+                        f"(shape={shape}, kwargs={kwargs}).\n{out!r}"
+                    )
+
+
+@pytest.mark.parametrize("shape", sorted(CONTENT_SHAPES))
+def test_gemma4_every_message_content_reaches_the_prompt(
+    template_pairs, shape: str
+) -> None:
+    """Same invariant for Gemma 4 upstream (the family ships no patched stack,
+    so this guards the tracked upstream and, by extension, the opt-in patches
+    applied on top of it)."""
+    for size in GEMMA4_SIZES:
+        pair = _find_pair(template_pairs, "gemma4", size)
+        msgs = CONTENT_SHAPES[shape]
+        # gemma uses `reasoning`/`reasoning_content` differently; skip the
+        # reasoning-only shapes and assert the content markers.
+        out = _render_str(pair.upstream.read_text(), {"messages": msgs})
+        for msg in msgs:
+            content = msg.get("content") or ""
+            for marker in re.findall(r"(?:USER|ASSISTANT|SYSTEM|TOOL)_MARKER_\d", content):
+                assert marker in out, (
+                    f"{marker} from a {msg['role']} message was DROPPED on "
+                    f"{size} (shape={shape}).\n{out!r}"
+                )

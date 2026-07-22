@@ -16,9 +16,14 @@ describe a single JSON object with "name"/"arguments" keys inside
 <tool_call></tool_call>, and (b) each assistant tool call serializes as
 `<tool_call>\n{"name": ..., "arguments": {...}}\n</tool_call>` instead of
 the XML <function=>/<parameter=> nesting. Mapping arguments are emitted via
-`| tojson`; non-empty string-form arguments pass through trimmed; missing,
-none, or whitespace-only arguments become `{}` (so the emitted object is
-always valid JSON).
+`| tojson`; string-form arguments that look like a pre-serialized JSON container
+(`{...}` / `[...]`) pass through verbatim; any OTHER non-empty string is
+JSON-ENCODED; missing, none or whitespace-only arguments become `{}`. The
+emitted object is therefore always valid JSON. (Earlier revisions spliced a
+plain string in raw, so `arguments="not-json"` produced the invalid
+`{"arguments": not-json}` — found by review 2026-07-22.) Neither engine has a
+JSON parser, so a string that both starts `{` and ends `}` is trusted as-is;
+an internally malformed object cannot be detected from inside a template.
 
 Default path unchanged: with the kwarg unset or "xml", the render is
 byte-identical to the pre-Q3.6-13 shipped template — verified across
@@ -46,7 +51,7 @@ them raw, producing invalid JSON). Diffs against the shipped default stack
  {%- set image_count = namespace(value=0) %}
  {%- set video_count = namespace(value=0) %}
  {%- macro render_content(content, do_vision_count, is_system_content=false) %}
-@@ -84,7 +85,12 @@
+@@ -89,7 +90,12 @@
          {{- tool | tojson }}
      {%- endfor %}
      {{- "\n</tools>" }}
@@ -59,7 +64,7 @@ them raw, producing invalid JSON). Diffs against the shipped default stack
      {%- if merged_system %}
          {{- '\n\n' + merged_system }}
      {%- endif %}
-@@ -152,6 +158,20 @@
+@@ -157,6 +163,26 @@
                  {%- if tool_call.function is defined %}
                      {%- set tool_call = tool_call.function %}
                  {%- endif %}
@@ -72,7 +77,13 @@ them raw, producing invalid JSON). Diffs against the shipped default stack
 +                        {%- if tool_call.arguments is mapping %}
 +                            {%- set _args = tool_call.arguments | tojson %}
 +                        {%- elif tool_call.arguments is string and tool_call.arguments|trim %}
-+                            {%- set _args = tool_call.arguments|trim %}
++                            {#- A pre-serialized JSON container passes through; anything else is JSON-ENCODED so the emitted object is ALWAYS valid JSON. Without this a plain string such as `not-json` was spliced in raw, yielding {"arguments": not-json}. Neither jinja2 nor minja has a JSON parser, so a string that both starts `{` and ends `}` is trusted verbatim — an internally malformed object cannot be detected here. -#}
++                            {%- set _a = tool_call.arguments|trim %}
++                            {%- if (_a.startswith('{') and _a.endswith('}')) or (_a.startswith('[') and _a.endswith(']')) %}
++                                {%- set _args = _a %}
++                            {%- else %}
++                                {%- set _args = _a|tojson %}
++                            {%- endif %}
 +                        {%- endif %}
 +                    {%- endif %}
 +                    {{- '<tool_call>\n{"name": ' }}{{- tool_call.name | tojson }}{{- ', "arguments": ' }}{{- _args }}{{- '}\n</tool_call>' }}
@@ -80,7 +91,7 @@ them raw, producing invalid JSON). Diffs against the shipped default stack
                  {%- if loop.first %}
                      {%- if content|trim %}
                          {{- '\n\n<tool_call>\n<function=' + tool_call.name + '>\n' }}
-@@ -176,6 +196,7 @@
+@@ -181,6 +207,7 @@
                      {%- endif %}
                  {%- endif %}
                  {{- '</function>\n</tool_call>' }}

@@ -30,11 +30,15 @@ Verified byte-identical under jinja2 across all Gemma 4 fixtures x
 
 Behaviour differences vs stock, under jinja2 (scope of the claim matters):
 
-  - **Mappings — a deliberate crash fix.** jinja2's `sequence` test returns
-    true for MAPPINGS, so a dict-valued `content` previously entered the
-    content-parts loop, iterated the dict's string keys, and raised
-    `'str object' has no attribute 'get'`. The explicit `is not mapping`
-    guard excludes that case, so the turn renders instead of crashing.
+  - **Mappings — the raise goes away, but so does the text.** jinja2's
+    `sequence` test returns true for MAPPINGS, so a dict-valued `content`
+    previously entered the content-parts loop, iterated the dict's string keys,
+    and raised `'str object' has no attribute 'get'`. The `is not mapping`
+    guard — required for the portability fix regardless — makes the render
+    succeed, but the dict's text does NOT reach the prompt; the turn renders
+    empty. That is a loud failure traded for a silent one, so it is recorded as
+    a consequence rather than advertised as a fix. A dict-valued `content` is
+    malformed input; send a string or a list of parts.
   - **Sets and generators — newly admitted, and NOT recommended.** `iterable`
     is broader than `sequence`: a set or a generator passes `is iterable` but
     fails `is sequence`, so these now enter the content loops where stock

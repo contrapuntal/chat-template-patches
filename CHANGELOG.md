@@ -54,6 +54,36 @@ documented in `docs/PATCH-CATALOG.md`.
   surface from 3 to 4 `is sequence` sites. Byte-identical under jinja2 for
   normal inputs, and additionally fixes a latent dict-valued-`content` crash
   (jinja2's `sequence` test is true for mappings).
+- **Content-preservation tests added — the suite could not detect a template
+  that drops message content.** Mutation testing showed the entire 228-test
+  suite passing with the shipped Qwen3.6 template mutated to omit assistant
+  content, and again with Q3.6-3's `</thinking>` branch mutated to blank it.
+  Every patch had a test; nothing asserted that a message's text actually
+  reaches the prompt. Now asserted across five conversation shapes x three
+  `preserve_thinking` settings, for Qwen3.6 and Gemma 4. Verified by
+  re-running each mutant: all are now caught.
+- **G8 could not render on minja for list-valued `type`.** `| map('upper')` is
+  unimplemented there (`NotImplemented: map: filter-mapping`), so a schema like
+  `{"type": ["string","null"]}` — the standard Pydantic nullable shape, which
+  is exactly what G8 exists to serve — aborted the whole render on llama.cpp.
+  Replaced with a namespace accumulator; byte-identical under jinja2. Upstream's
+  own array-items branch still uses `map`, so a list-valued type INSIDE `items`
+  still aborts there; recorded as an upstream defect.
+- **The minja gate ignored the analyzer's exit code**, treating any run without
+  the literal phrase "Analysis failed" as success — including crashes and empty
+  runs. Now checks the return code and requires the completion marker.
+- **G1's dict-content claim corrected.** It does not fix the crash; it trades a
+  loud failure for a silent one — the render succeeds but the dict's text is
+  dropped. Re-pinned by test and re-documented as a consequence, not a feature.
+- **minja's `trim` is ASCII-only** (jinja2 also strips Unicode whitespace);
+  added to the construct differential. This is the single root cause behind
+  three separately-reported low-severity findings (whitespace-only
+  reasoning_content, string tool arguments, and post-sentinel system blocks all
+  survive on minja where jinja2 empties them).
+- **Q3.6-6 and Q3.6-13 tests strengthened** — the former now asserts the whole
+  inner spec survives unwrapping (a mutant dropping `parameters` passed every
+  previous assertion); the latter now exercises byte-identity WITH tools, since
+  the instruction block only renders when tools are present.
 - **jinja2/minja construct differential added to the suite**, closing the
   second half of the engine-divergence gap: the minja gate proved templates
   *parse*, this proves they render the *same bytes*. 22 constructs probed

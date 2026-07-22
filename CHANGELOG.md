@@ -54,6 +54,28 @@ documented in `docs/PATCH-CATALOG.md`.
   surface from 3 to 4 `is sequence` sites. Byte-identical under jinja2 for
   normal inputs, and additionally fixes a latent dict-valued-`content` crash
   (jinja2's `sequence` test is true for mappings).
+- **Gemma 4 G8 revised** — fixed two defects found in review. (1) Upstream's
+  object fallback recurses with `filter_keys=true` over a `standard_keys` list
+  naming none of the schema vocabulary, so stock renders
+  `{"type":"object","anyOf":[…]}` as `properties:{anyOf:{…}}` — losing the real
+  `anyOf` and inventing a property. The previous G8 restored the real `anyOf`
+  but left the bogus pseudo-property beside it, showing the model contradictory
+  constraints. `standard_keys` now names every keyword G8 emits, and the
+  fallback is skipped when no unhandled key remains (no more hollow
+  `properties:{}`); an explicit empty `properties:{}` still renders.
+  (2) `anyOf: []`, `oneOf: []`, `allOf: []`, `enum: []` and `$ref: ""` were
+  gated on truthiness and silently dropped — now gated on presence. G8's tests
+  assert exact output instead of token presence, which is why the old ones
+  passed while the bug was live.
+- **Gemma 4 G1 claim narrowed** — `is iterable` also admits sets and
+  generators, which `is sequence` rejects; a set renders nondeterministically
+  and a one-shot generator can vanish if an earlier pass consumes it. The
+  no-change guarantee now explicitly covers JSON-compatible inputs (strings,
+  lists, dicts) rather than claiming mappings were the only affected class.
+- **Gemma 4 docs reconciled** — the detailed G7/G9/G10 entries carry explicit
+  RETIRED banners (G9's notes that its separator half lives on as G11),
+  PROVENANCE lists four opt-in patches and the string-args breaking change, and
+  the G8 entry no longer claims no tests ship.
 - **Gemma 4 G11 (new, opt-in) — consecutive assistant messages were gluing.**
   Google's rewrite fixed G9's turn-marker imbalance but emits no separator, so
   `"LEFT"`+`"RIGHT"` rendered as `LEFTRIGHT` (and `A1A2A3` for longer runs).

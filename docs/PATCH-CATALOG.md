@@ -1440,6 +1440,17 @@ New: {%- elif argument is iterable and argument is not string and argument is no
 **Status: opt-in.** Standard `jinja2` accepts `is sequence`; this patch is
 only required for minijinja-based runtimes.
 
+**Scope of the no-change claim (narrowed 2026-07-21).** `is iterable` is
+broader than `is sequence`: sets and generators pass the former and fail the
+latter, so they now enter the content loops where stock ignored them. A set
+renders in nondeterministic order; a generator is one-shot, so if an earlier
+pass consumes it (G4's sentinel scan reads the system content before the
+render does) the system text silently disappears. For **JSON-compatible
+inputs — strings, lists, dicts, i.e. everything arriving from a JSON request
+body — behaviour is unchanged at all four sites**, apart from the deliberate
+mapping crash fix. Callers building messages in Python should pass lists.
+Surfaced by an independent review (gpt-5.6-sol).
+
 **Prior art.** u/Reaper_9382, r/LocalLLaMA, Apr 2026.
 
 ---
@@ -1623,6 +1634,8 @@ guidance.
 
 ### G7 — Empty-content tool-call assistant turn closure
 
+**RETIRED 2026-07-20 — fixed upstream.** Google's 2026-07-09 rewrite added `and not next_nt.found` to the turn-close conditional, so the close now fires. The `.patch` was deleted and `templates/gemma4/patched/` removed; an inverted sentinel (`test_g7_upstream_closes_empty_content_tool_call`) now asserts upstream stays fixed. The text below is the historical record of the patch as it shipped.
+
 **Target:** Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it.
 
 **Failure mode.** When an assistant message contains tool calls (with
@@ -1783,6 +1796,8 @@ of the HF disc #91 repo/number pairing, which differs across mirrors).
 
 ### G9 — Gemma 4 consecutive-assistant turn open/close balance
 
+**RETIRED 2026-07-20 — fixed upstream, but see G11.** Google's rewrite added a structurally equivalent forward-scan plus a `continues_into_next` suppression branch, so turn markers balance. It did **not** reproduce G9's newline separator, so adjacent assistant bodies now glue (`LEFT`+`RIGHT` -> `LEFTRIGHT`); that residue ships separately as **G11**. The text below is the historical record.
+
 **Target:** Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it. **Stacks on G7.**
 
 **Failure mode.** Two back-to-back assistant messages (no intervening
@@ -1873,6 +1888,8 @@ non-consecutive cases).
 ---
 
 ### G10 — Gemma 4 `preserve_thinking` (default-OFF kwarg)
+
+**RETIRED 2026-07-20 — fixed upstream.** Google's rewrite added a NATIVE `preserve_thinking` kwarg with the same default-OFF contract; the old retention condition is a strict subset of upstream's `thinking_gate`, so nothing G10 retained is now lost. The text below is the historical record.
 
 **Target:** Gemma 4 26B-A4B-it, 31B-it, E2B-it, E4B-it. **Stacks on G7 + G9.**
 

@@ -28,13 +28,28 @@ Fix: replace all four `is sequence` tests with the portable form
 Verified byte-identical under jinja2 across all Gemma 4 fixtures x
 {no kwargs, tools, preserve_thinking, enable_thinking} (12 render combos).
 
-Bonus correctness fix (a real behaviour change, deliberate): jinja2's
-`sequence` test returns true for MAPPINGS, so a dict-valued `content`
-previously entered the content-parts loop, iterated the dict's string keys,
-and raised `'str object' has no attribute 'get'`. The explicit
-`is not mapping` guard excludes that case, so the turn renders instead of
-crashing. This is the only input class where the patched and stock
-templates differ under jinja2.
+Behaviour differences vs stock, under jinja2 (scope of the claim matters):
+
+  - **Mappings — a deliberate crash fix.** jinja2's `sequence` test returns
+    true for MAPPINGS, so a dict-valued `content` previously entered the
+    content-parts loop, iterated the dict's string keys, and raised
+    `'str object' has no attribute 'get'`. The explicit `is not mapping`
+    guard excludes that case, so the turn renders instead of crashing.
+  - **Sets and generators — newly admitted, and NOT recommended.** `iterable`
+    is broader than `sequence`: a set or a generator passes `is iterable` but
+    fails `is sequence`, so these now enter the content loops where stock
+    ignored them. A set renders in nondeterministic order. A generator is
+    ONE-SHOT: if it is consumed by an earlier pass (G4's sentinel scan reads
+    the system content before the render does), the render then sees nothing
+    and the system text silently disappears.
+
+For **JSON-compatible inputs — strings, lists, dicts — which is everything a
+chat template receives from a JSON request body — behaviour is unchanged at
+all four sites** apart from the mapping crash fix above. Callers constructing
+messages in Python should pass lists, not sets or generators; that is already
+required for a template to be deterministic. (Scope narrowed 2026-07-21 after
+an independent review noted the earlier "mappings are the only changed class"
+claim was too strong.)
 
 Prior art: u/Reaper_9382, r/LocalLLaMA "Fix Gemma 4 MCP tool calls broken in
 LM Studio" (Apr 2026). Patch first shipped 2026-07-20 (previously

@@ -131,8 +131,8 @@ See `docs/PATCH-CATALOG.md` for the full table. High-level summary:
 | Family | Patches in repo | Of which already upstream | Affecting active runtimes |
 |---|---:|---:|---:|
 | Qwen3.5 | P1–P12, R1–R3 (15 total — all currently catalog-only / deferred) | P2, R1 (partial) | 8 |
-| Qwen3.6 | Q3.6-1 … Q3.6-13 | 0 | 7 active (Q3.6-1…-6, Q3.6-12); Q3.6-7/-9/-10/-13 opt-in; Q3.6-8 watch; Q3.6-11 catalog-only |
-| Gemma 4 | G1–G10 | **G3, G7, G9, G10** | 2 opt-in only (G1, G8) — **no default patched stack** |
+| Qwen3.6 | Q3.6-1 … Q3.6-14 | 0 | 8 active (Q3.6-1…-6, Q3.6-12, Q3.6-14); Q3.6-7/-9/-10/-13 opt-in; Q3.6-8 watch; Q3.6-11 catalog-only |
+| Gemma 4 | G1–G11 | **G3, G7, G9, G10** | 2 opt-in only (G1, G8) — **no default patched stack** |
 
 ## Contributing
 

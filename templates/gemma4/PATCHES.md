@@ -6,7 +6,7 @@
 `upstream/` only and the family is listed in `CATALOG_ONLY_FAMILIES`
 (`tests/conftest.py`) alongside qwen3.5.
 
-Use Google's stock template unless you hit one of the two opt-in cases below.
+Use Google's stock template unless you hit one of the four opt-in cases below.
 
 ## Retired — fixed upstream 2026-07-09
 
@@ -66,4 +66,4 @@ needs a JSON-parse filter that neither jinja2 nor minja has. See
 - **G5** (LM Studio thinking-toggle) — `model.yaml` workaround.
 - **G6** (tool-calling/system-prompt compliance) — runtime recommendations.
 
-See `docs/PATCH-CATALOG.md` §§ G1–G10 and `templates/gemma4/PROVENANCE.md`.
+See `docs/PATCH-CATALOG.md` §§ G1–G11 and `templates/gemma4/PROVENANCE.md`.

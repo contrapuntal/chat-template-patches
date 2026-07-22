@@ -43,7 +43,17 @@
   (the new multimodal tool-response branch adds `tool_body is sequence`).
 - **G8 still required** — upstream still handles only `enum` (and only for
   `type == 'STRING'`); `anyOf` / `oneOf` / `allOf` / `$ref` / `$defs` /
-  `const` remain silently dropped. HF discussion #91 still unmerged.
+  `const` remain silently dropped. HF discussion #91 still unmerged. Upstream
+  additionally turns unhandled keys into **pseudo-properties** via its
+  `filter_keys` object fallback (`{"type":"object","anyOf":[…]}` renders as
+  `properties:{anyOf:{…}}`, losing the real `anyOf`); G8 corrects that for the
+  JSON Schema vocabulary.
+- **G11 required for histories with consecutive assistant messages** — the
+  2026-07-09 rewrite merges them into one balanced turn but emits no
+  separator, so their bodies glue together.
+- **Breaking change: string-form `tool_calls[].function.arguments` is now
+  REJECTED** with a hard error — the shape the OpenAI spec mandates.
+  Deserialize before calling the template; see `docs/PATCH-CATALOG.md`.
 - Previous fetch (2026-05-06, SHAs `94899c0f` / `33204f1a`) was the PR #86
   (`145dc25`) baseline.
 - Template authors: Google LLC. License: Gemma Terms of Use (use

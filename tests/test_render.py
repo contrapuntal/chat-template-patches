@@ -326,6 +326,66 @@ def test_g8_restores_dropped_schema_constructs(template_pairs, size: str) -> Non
         assert token in g8_out, f"G8 failed to restore {token!r} on {size}"
 
 
+def _tool_decl(src: str, props: dict) -> str:
+    """Render one tool declaration block for `properties`."""
+    tools = [{"type": "function", "function": {
+        "name": "f", "parameters": {"type": "object", "properties": props}}}]
+    out = _render_str(src, {"messages": [{"role": "user", "content": "hi"}], "tools": tools})
+    return out[out.find("<|tool>"):out.find("<tool|>")]
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g8_no_pseudo_properties_for_combinator_objects(template_pairs, size: str) -> None:
+    """`{"type":"object","anyOf":[...]}` must emit the real `anyOf` and NOT a
+    pseudo-property. Upstream's object fallback recurses with filter_keys=true
+    over a `standard_keys` list that names none of the schema vocabulary, so
+    stock renders `properties:{anyOf:{...}}` — losing the real anyOf and
+    inventing a property. Asserting exact output, not just token presence:
+    the earlier G8 passed a presence check while emitting both."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    src = pair.upstream.read_text()
+    g8 = _apply_gemma_patch(src, G8_PATCH)
+    props = {"x": {"type": "object", "anyOf": [{"type": "string"}, {"type": "number"}]}}
+    up_out, g8_out = _tool_decl(src, props), _tool_decl(g8, props)
+    assert "properties:{anyOf" in up_out, (
+        f"upstream {size} no longer creates the pseudo-property — G8's "
+        f"standard_keys fix may be redundant; re-check the catalog."
+    )
+    assert "properties:{anyOf" not in g8_out, (
+        f"G8 still emits a pseudo-property on {size}:\n{g8_out!r}"
+    )
+    assert "properties:{}" not in g8_out, (
+        f"G8 emits a hollow properties block on {size}:\n{g8_out!r}"
+    )
+    assert "anyOf:[" in g8_out, f"G8 lost the real anyOf on {size}:\n{g8_out!r}"
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g8_preserves_empty_constraints(template_pairs, size: str) -> None:
+    """Empty `anyOf`/`oneOf`/`enum` and an empty `$ref` are meaningful and must
+    survive — they were previously gated on truthiness and silently dropped."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    g8 = _apply_gemma_patch(pair.upstream.read_text(), G8_PATCH)
+    for props, needle in (
+        ({"y": {"anyOf": [], "description": "D"}}, "anyOf:[]"),
+        ({"y": {"oneOf": [], "description": "D"}}, "oneOf:[]"),
+        ({"z": {"$ref": "", "description": "D"}}, "$ref:"),
+        ({"w": {"type": "string", "enum": []}}, "enum:[]"),
+    ):
+        out = _tool_decl(g8, props)
+        assert needle in out, f"G8 dropped {needle} on {size}:\n{out!r}"
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g8_keeps_explicit_empty_properties(template_pairs, size: str) -> None:
+    """Suppressing the hollow fallback must not suppress a schema's own
+    explicitly-empty `properties: {}`."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    g8 = _apply_gemma_patch(pair.upstream.read_text(), G8_PATCH)
+    out = _tool_decl(g8, {"p": {"type": "object", "properties": {}}})
+    assert "properties:{}" in out, f"explicit empty properties lost on {size}:\n{out!r}"
+
+
 # ---------------------------------------------------------------------------
 # Gemma 4 — G4 thinking-toggle sentinels (OPT-IN; stacks on G1)
 # ---------------------------------------------------------------------------

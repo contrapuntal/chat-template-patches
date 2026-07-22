@@ -44,7 +44,21 @@ new file already ends with one, so that hunk is dropped.
 
 --- a/templates/gemma4/upstream/26B-A4B-it.jinja
 +++ b/templates/gemma4/upstream/26B-A4B-it.jinja
-@@ -17,12 +17,39 @@
+@@ -5,7 +5,12 @@
+   Context: Fixed tool-calling loops, turn closures, and thinking content-ordering.
+ #}
+ {%- macro format_parameters(properties, required, filter_keys=false) -%}
+-    {%- set standard_keys = ['description', 'type', 'properties', 'required', 'nullable'] -%}
++    {#- G8: standard_keys drives the `filter_keys` object-fallback recursion. It MUST
++       list every keyword G8 emits explicitly, or that keyword is re-emitted as a
++       pseudo-property: {'type':'object','anyOf':[...]} produced both the real
++       anyOf AND a bogus properties:{anyOf:{}}. -#}
++    {%- set standard_keys = ['description', 'type', 'properties', 'required', 'nullable',
++                             'anyOf', 'oneOf', 'allOf', '$ref', '$defs', 'enum', 'const'] -%}
+     {%- set ns = namespace(found_first=false) -%}
+     {%- for key, value in properties | dictsort -%}
+         {%- set add_comma = false -%}
+@@ -17,12 +22,39 @@
                  description:<|"|>{{ value['description'] }}<|"|>
                  {%- set add_comma = true -%}
              {%- endif -%}
@@ -61,23 +75,23 @@ new file already ends with one, so that hunk is dropped.
                  {%- endif -%}
 -            {%- elif value['type'] | upper == 'ARRAY' -%}
 +            {%- endif -%}
-+            {%- if value['anyOf'] is defined and value['anyOf'] -%}
++            {%- if value['anyOf'] is defined and value['anyOf'] is not none -%}
 +                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
 +                anyOf:{{ format_argument(value['anyOf'], escape_keys=false) }}
 +            {%- endif -%}
-+            {%- if value['oneOf'] is defined and value['oneOf'] -%}
++            {%- if value['oneOf'] is defined and value['oneOf'] is not none -%}
 +                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
 +                oneOf:{{ format_argument(value['oneOf'], escape_keys=false) }}
 +            {%- endif -%}
-+            {%- if value['allOf'] is defined and value['allOf'] -%}
++            {%- if value['allOf'] is defined and value['allOf'] is not none -%}
 +                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
 +                allOf:{{ format_argument(value['allOf'], escape_keys=false) }}
 +            {%- endif -%}
-+            {%- if value['$ref'] is defined and value['$ref'] -%}
++            {%- if value['$ref'] is defined and value['$ref'] is not none -%}
 +                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
 +                $ref:<|"|>{{ value['$ref'] }}<|"|>
 +            {%- endif -%}
-+            {%- if value['enum'] is defined and value['enum'] -%}
++            {%- if value['enum'] is defined and value['enum'] is not none -%}
 +                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
 +                enum:{{ format_argument(value['enum']) }}
 +            {%- endif -%}
@@ -89,7 +103,7 @@ new file already ends with one, so that hunk is dropped.
                  {%- if value['items'] is mapping and value['items'] -%}
                      {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
                      items:{
-@@ -58,11 +85,11 @@
+@@ -58,23 +90,35 @@
                      }
                  {%- endif -%}
              {%- endif -%}
@@ -99,11 +113,28 @@ new file already ends with one, so that hunk is dropped.
                  nullable:true
              {%- endif -%}
 -            {%- if value['type'] | upper == 'OBJECT' -%}
++            {#- G8: does the value carry any key the explicit branches above did NOT
++                already emit? Upstream's object fallback turns every such key into a
++                pseudo-property, so without this guard an object whose only extra keys
++                are handled schema keywords emits a hollow `properties:{}`. -#}
++            {%- set ns_fb = namespace(extra=false) -%}
++            {%- if value is mapping -%}
++                {%- for _fb_key in value -%}
++                    {%- if _fb_key not in standard_keys -%}
++                        {%- set ns_fb.extra = true -%}
++                    {%- endif -%}
++                {%- endfor -%}
++            {%- endif -%}
 +            {%- if 'OBJECT' in type_names.names -%}
                  {%- if value['properties'] is defined and value['properties'] is mapping -%}
                      {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
                      properties:{
-@@ -74,7 +101,7 @@
+                     {{- format_parameters(value['properties'], value['required'] | default([])) -}}
+                     }
+-                {%- elif value is mapping -%}
++                {%- elif value is mapping and ns_fb.extra -%}
+                     {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
+                     properties:{
                      {{- format_parameters(value, value['required'] | default([]), filter_keys=true) -}}
                      }
                  {%- endif -%}
@@ -112,7 +143,7 @@ new file already ends with one, so that hunk is dropped.
                      {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}
                      required:[
                      {%- for item in value['required'] | default([]) -%}
-@@ -84,8 +111,15 @@
+@@ -84,8 +128,15 @@
                      ]
                  {%- endif -%}
              {%- endif -%}
@@ -130,17 +161,17 @@ new file already ends with one, so that hunk is dropped.
          {%- endif -%}
      {%- endfor -%}
  {%- endmacro -%}
-@@ -96,6 +130,9 @@
-         ,parameters:{
+@@ -97,6 +148,9 @@
          {%- if params['properties'] -%}
              properties:{ {{- format_parameters(params['properties'], params['required']) -}} },
-+        {%- endif -%}
+         {%- endif -%}
 +        {%- if params['$defs'] is defined and params['$defs'] -%}
 +            $defs:{{ format_argument(params['$defs'], escape_keys=false) }},
-         {%- endif -%}
++        {%- endif -%}
          {%- if params['required'] -%}
              required:[
-@@ -128,6 +165,8 @@
+             {%- for item in params['required'] -%}
+@@ -128,6 +182,8 @@
          {{- '<|"|>' + argument + '<|"|>' -}}
      {%- elif argument is boolean -%}
          {{- 'true' if argument else 'false' -}}

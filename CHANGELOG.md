@@ -54,6 +54,21 @@ documented in `docs/PATCH-CATALOG.md`.
   surface from 3 to 4 `is sequence` sites. Byte-identical under jinja2 for
   normal inputs, and additionally fixes a latent dict-valued-`content` crash
   (jinja2's `sequence` test is true for mappings).
+- **Gemma 4 G11 (new, opt-in) — consecutive assistant messages were gluing.**
+  Google's rewrite fixed G9's turn-marker imbalance but emits no separator, so
+  `"LEFT"`+`"RIGHT"` rendered as `LEFTRIGHT` (and `A1A2A3` for longer runs).
+  The G9 retirement sentinel missed it because markers still balance. G11 emits
+  the newline, gated on `has_content` — strictly better than the retired G9,
+  which emitted it unconditionally and injected a stray blank line when the
+  first message of the pair was empty.
+- **Gemma 4: documented an upstream breaking change.** The 2026-07-09 template
+  now REJECTS string-form `tool_calls[].function.arguments` with a hard error —
+  the shape the OpenAI spec mandates — so histories that rendered before the
+  sync can stop rendering after it. No compatibility patch ships: converting
+  JSON to Gemma's `call:NAME{k:v}` form needs a JSON-parse filter absent from
+  both jinja2 and minja, and unlike Qwen's Q3.6-4 case upstream fails loudly
+  rather than silently dropping. Migration snippet in the catalog; a sentinel
+  test pins the behaviour.
 - **Qwen3.6 Q3.6-14 — the shipped template could not render on llama.cpp.**
   minja (llama.cpp / LM Studio GGUF) implements no position-returning string
   method: `rfind`, `find` and `index` are Undefined and abort the render.

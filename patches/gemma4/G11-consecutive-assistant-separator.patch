@@ -1,0 +1,65 @@
+From: chat-template-patches
+Subject: [G11] Separate merged consecutive assistant messages
+
+Targets: templates/gemma4/upstream/<size>.jinja — Google's 2026-07-09
+template. Applies to all five sizes; diffs against bare upstream.
+
+Status: OPT-IN. Apply if your histories can contain two or more consecutive
+assistant messages.
+
+Failure mode: Google's 2026-07-09 rewrite fixed the turn-marker imbalance that
+G9 targeted (it suppresses the second message's `<|turn>model` open and defers
+the first's close, so both share one balanced pair — G9 is retired as upstream).
+But the `continues_into_next` branch emits **nothing**, so the two message
+bodies are concatenated with no separator:
+
+    user "u", assistant "LEFT", assistant "RIGHT"
+      ->  <|turn>model\nLEFTRIGHT<turn|>
+
+Three and four consecutive assistants render `A1A2A3` / `A1A2A3A4`. Turn
+markers balance, so the retirement sentinel (which checks marker balance and
+content presence) does not catch it — but the message text changes meaning.
+
+Fix: emit a newline in the continuation branch, gated on `has_content`.
+
+Why gated, unlike the retired G9. G9 emitted the newline unconditionally, which
+injects a stray blank line when the FIRST of the pair is empty:
+
+    assistant "", assistant "A2"
+      G9-style (unconditional):  <|turn>model\n\nA2<turn|>     <- stray line
+      G11 (gated on has_content): <|turn>model\nA2<turn|>       <- matches upstream
+
+Gating on `has_content` is therefore strictly better than the form this repo
+previously shipped. A trailing newline is still emitted when the SECOND message
+is the empty one (`A1\n` before the close); avoiding that would require knowing
+the next message's rendered content before rendering it, and a trailing
+whitespace byte before a turn close is benign next to gluing two messages.
+
+Verified: byte-identical to upstream for every conversation WITHOUT consecutive
+assistants (15 combos incl. tool-call and fixture shapes); 2/3/4 consecutive
+assistants separated; empty-leading case gains no stray separator; parses under
+minja on all five sizes.
+
+Relationship to G9: G9 is retired (upstream fixed the imbalance). G11 is the
+narrow residue — the separator half of G9 that upstream did NOT reproduce.
+Surfaced by an independent review (gpt-5.6-sol) of the retirement.
+
+--- a/templates/gemma4/upstream/26B-A4B-it.jinja
++++ b/templates/gemma4/upstream/26B-A4B-it.jinja
+@@ -368,7 +368,16 @@
+ 
+         {%- if ns.prev_message_type == 'tool_call' and not ns_tr_out.flag -%}
+             {{- '<|tool_response>' -}}
++        {#- G11: upstream suppresses the close so both assistant messages share one
++           turn (that is the G9 fix, now upstream) but emits NOTHING, so adjacent
++           message contents glue together: "LEFT" + "RIGHT" renders as "LEFTRIGHT".
++           Emit a newline separator, but only when THIS message actually produced
++           content — otherwise an empty leading message would inject a stray blank
++           line (the retired G9 emitted it unconditionally and had that flaw). -#}
+         {%- elif continues_into_next -%}
++            {%- if has_content -%}
++                {{- '\n' -}}
++            {%- endif -%}
+         {%- elif not (ns_tr_out.flag and not has_content and not next_nt.found) -%}
+             {{- '<turn|>\n' -}}
+         {%- endif -%}

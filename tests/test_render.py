@@ -464,6 +464,115 @@ def test_g4_g8_chain_applies(template_pairs, size: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Gemma 4 — G11 consecutive-assistant separator (OPT-IN)
+# ---------------------------------------------------------------------------
+
+G11_PATCH = REPO_ROOT / "patches" / "gemma4" / "G11-consecutive-assistant-separator.patch"
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g11_upstream_glues_consecutive_assistants(template_pairs, size: str) -> None:
+    """Confirms the defect G11 fixes: upstream balances the turn markers (the G9
+    fix, now upstream) but emits NO separator, so adjacent assistant bodies are
+    concatenated. If this ever passes, upstream added a separator and G11 can
+    retire."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    msgs = [{"role": "user", "content": "u"},
+            {"role": "assistant", "content": "LEFT"},
+            {"role": "assistant", "content": "RIGHT"},
+            {"role": "user", "content": "v"}]
+    out = _render_str(pair.upstream.read_text(),
+                      {"messages": msgs, "add_generation_prompt": False})
+    assert "LEFTRIGHT" in out, (
+        f"upstream {size} no longer glues consecutive assistants — G11 may be "
+        f"fixed upstream; update docs/PATCH-CATALOG.md § G11.\n{out!r}"
+    )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g11_separates_two_three_and_four_consecutive(template_pairs, size: str) -> None:
+    """With G11 applied, runs of 2, 3 and 4 consecutive assistants are separated
+    by exactly one newline and remain inside ONE balanced turn."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    assert G11_PATCH.is_file(), f"G11 patch missing at {G11_PATCH}"
+    applied = _apply_gemma_patch(pair.upstream.read_text(), G11_PATCH)
+    for k in (2, 3, 4):
+        msgs = ([{"role": "user", "content": "u"}]
+                + [{"role": "assistant", "content": f"A{i + 1}"} for i in range(k)]
+                + [{"role": "user", "content": "v"}])
+        out = _render_str(applied, {"messages": msgs, "add_generation_prompt": False})
+        expected = "\n".join(f"A{i + 1}" for i in range(k))
+        assert expected in out, f"{k} consecutive assistants not separated on {size}:\n{out!r}"
+        assert "A1A2" not in out, f"{k} assistants still glued on {size}:\n{out!r}"
+        opens, closes = _turn_counts(out)
+        assert opens == closes, f"G11 unbalanced turns on {size} (k={k}): {opens}/{closes}"
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g11_empty_leading_message_adds_no_stray_separator(template_pairs, size: str) -> None:
+    """G11 gates the separator on `has_content`, unlike the retired G9 which
+    emitted it unconditionally. An empty FIRST message of the pair must render
+    byte-identically to upstream (no stray blank line)."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    applied = _apply_gemma_patch(pair.upstream.read_text(), G11_PATCH)
+    msgs = [{"role": "user", "content": "u"},
+            {"role": "assistant", "content": ""},
+            {"role": "assistant", "content": "A2"},
+            {"role": "user", "content": "v"}]
+    payload = {"messages": msgs, "add_generation_prompt": False}
+    assert _render_str(pair.upstream.read_text(), payload) == _render_str(applied, payload), (
+        f"G11 injected a stray separator for an empty leading message on {size}"
+    )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g11_inert_without_consecutive_assistants(template_pairs, size: str) -> None:
+    """G11 must be byte-identical to upstream for any conversation that has no
+    consecutive assistant messages."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    src = pair.upstream.read_text()
+    applied = _apply_gemma_patch(src, G11_PATCH)
+    convs = [
+        [{"role": "user", "content": "u"}, {"role": "assistant", "content": "a"}],
+        [{"role": "user", "content": "u"}, {"role": "assistant", "content": "a"},
+         {"role": "user", "content": "v"}, {"role": "assistant", "content": "b"}],
+        [{"role": "user", "content": "u"},
+         {"role": "assistant", "content": "", "tool_calls": [
+             {"function": {"name": "t", "arguments": {"a": "b"}}}]},
+         {"role": "tool", "content": "R"}, {"role": "user", "content": "v"}],
+    ]
+    for msgs in convs:
+        for extra in ({}, {"add_generation_prompt": False}, {"preserve_thinking": True}):
+            payload = {"messages": msgs, **extra}
+            assert _render_str(src, payload) == _render_str(applied, payload), (
+                f"G11 changed a non-consecutive conversation on {size} (extra={extra})"
+            )
+
+
+@pytest.mark.parametrize("size", GEMMA4_SIZES)
+def test_g5_upstream_rejects_string_tool_arguments(template_pairs, size: str) -> None:
+    """Catalogued upstream behaviour change (2026-07-09): string-form
+    `tool_calls[].function.arguments` — the shape the OpenAI API spec mandates —
+    now raises instead of rendering. Pinned so a future upstream reversal is
+    noticed. See docs/PATCH-CATALOG.md § "Gemma 4 — string-form tool arguments"."""
+    pair = _find_pair(template_pairs, "gemma4", size)
+    src = pair.upstream.read_text()
+    msgs = [{"role": "user", "content": "u"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"function": {"name": "t", "arguments": '{"city": "SF"}'}}]}]
+    with pytest.raises(Exception) as exc:
+        _render_str(src, {"messages": msgs})
+    assert "JSON object" in str(exc.value) or "mapping" in str(exc.value), (
+        f"upstream {size} raised something unexpected for string args: {exc.value}"
+    )
+    # the mapping form must still work
+    ok = [{"role": "user", "content": "u"},
+          {"role": "assistant", "content": "", "tool_calls": [
+              {"function": {"name": "t", "arguments": {"city": "SF"}}}]}]
+    assert "call:t" in _render_str(src, {"messages": ok})
+
+
+# ---------------------------------------------------------------------------
 # Q3.6-1 — Qwen3.6 preserve_thinking default-on flip
 # ---------------------------------------------------------------------------
 
@@ -1876,6 +1985,7 @@ def _shipped_and_optin_templates() -> list[tuple[str, str]]:
         g1 = _apply_additive_patch(base, G1_PATCH)
         cases.append((f"gemma4/{pair.size}+G1", g1))
         cases.append((f"gemma4/{pair.size}+G8", _apply_additive_patch(base, G8_PATCH)))
+        cases.append((f"gemma4/{pair.size}+G11", _apply_additive_patch(base, G11_PATCH)))
         cases.append((f"gemma4/{pair.size}+G1+G4", _apply_additive_patch(g1, G4_PATCH)))
     return cases
 

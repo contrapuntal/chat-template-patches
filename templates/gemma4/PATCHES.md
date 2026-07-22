@@ -26,6 +26,7 @@ re-surfaces the bug instead of silently returning.
 | Patch | Apply when |
 |---|---|
 | `patches/gemma4/G1-portable-iterable-check.patch` | You run **minijinja** (LM Studio's MCP path), which has no `sequence` test → `Unknown test: sequence` and every tool call fails. Google's rewrite **grew** this surface from 3 sites to 4. Byte-identical under jinja2 for normal inputs; also fixes a latent dict-valued-`content` crash. |
+| `patches/gemma4/G11-consecutive-assistant-separator.patch` | Your histories can contain two or more consecutive assistant messages. Upstream merges them into one turn but emits no separator, so `"LEFT"`+`"RIGHT"` renders as `LEFTRIGHT`. Byte-identical unless consecutive assistants are present. |
 | `patches/gemma4/G8-jsonschema-robustness.patch` | Your tools use `anyOf` / `oneOf` / `allOf` / `$ref` / `$defs` / `const`, or `enum` on a non-STRING type (i.e. most Pydantic-v2 / MCP tool schemas). Upstream silently **drops** all of these from the tool declaration. HF discussion #91 still unmerged. |
 
 Both patches apply cleanly to all five sizes and **stack together** (apply G1
@@ -39,6 +40,15 @@ cp templates/gemma4/upstream/26B-A4B-it.jinja /tmp/gemma4.jinja
 patch /tmp/gemma4.jinja < patches/gemma4/G1-portable-iterable-check.patch
 patch /tmp/gemma4.jinja < patches/gemma4/G8-jsonschema-robustness.patch
 ```
+
+## Known upstream behaviour change (no patch)
+
+Google's 2026-07-09 template **rejects** string-form
+`tool_calls[].function.arguments` with a hard error — the shape the OpenAI API
+spec mandates. Deserialize before calling the template. This repo ships no
+compatibility patch because converting JSON to Gemma's `call:NAME{k:v}` form
+needs a JSON-parse filter that neither jinja2 nor minja has. See
+`docs/PATCH-CATALOG.md` § "string-form tool arguments".
 
 ## Tracked sizes
 

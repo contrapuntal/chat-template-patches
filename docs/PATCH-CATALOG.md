@@ -58,6 +58,7 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 | G8 | Gemma 4 | JSON Schema robustness in tool declarations (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type) | **opt-in** (still unmerged upstream — HF disc #91; **patch regenerated 2026-07-20** against the 2026-07-09 template, 7→6 hunks) | community-tracker (HF discussion + Reddit; **snapshotted** at `docs/sources/pastebins/tBAHN6FV-sigjhl-...jinja`) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 | G9 | Gemma 4 | Balance turn open/close for consecutive assistant messages — the open-suppression (`continue_same_model_turn`) left an orphaned `<turn\|>` close; G9 adds the symmetric forward-scan to defer the prior message's close | **upstream** (fixed by Google 2026-07-09 with a structurally equivalent forward-scan + `continues_into_next`; patch retired). Kept as an **inverted regression sentinel**. | upstream-tracker (HF `google/gemma-4-31B-it` disc #62, Google-reproduced; **reproduced locally**) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 | G10 | Gemma 4 | `preserve_thinking` kwarg — render historical tool-call reasoning (not just the current-turn region), curing multi-step agentic `arguments: {}` collapse | **upstream** (Google shipped a **native** `preserve_thinking` kwarg 2026-07-09 with the same default-OFF contract; patch retired). Kept as an **inverted regression sentinel**. | derived (Gemma analog of Q3.6-1; upstream PR HF disc #118) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
+| G11 | Gemma 4 | Separator for merged consecutive assistant messages — upstream shares one turn (the G9 fix) but emits nothing, gluing `"LEFT"`+`"RIGHT"` into `LEFTRIGHT` | **opt-in** (ships a `.patch`; byte-identical unless consecutive assistants are present) | derived (residue of G9 that upstream did not reproduce; surfaced by gpt-5.6-sol review) | Gemma 4 12B-it, 26B-A4B-it, 31B-it, E2B-it, E4B-it |
 
 ---
 
@@ -1320,6 +1321,104 @@ absent. It was validated by reverting the fix and confirming both tests fail.
 **Note on Q3.6-9.** Q3.6-9 (opt-in, `loop.previtem` → indexing) targets *older*
 minja builds. It is unrelated: current minja handles `loop.previtem` but has
 never had `rfind`.
+
+---
+
+### G11 — Gemma 4 consecutive-assistant separator
+
+**Target:** all five Gemma 4 sizes. **Status: opt-in.**
+
+**Failure mode.** Google's 2026-07-09 rewrite fixed the turn-marker imbalance
+G9 targeted — it suppresses the second assistant's `<|turn>model` open and
+defers the first's close so both share one balanced pair. But the
+`continues_into_next` branch emits **nothing**, so the two bodies concatenate:
+
+```
+user "u", assistant "LEFT", assistant "RIGHT"
+  ->  <|turn>model\nLEFTRIGHT<turn|>
+```
+
+Runs of three and four render `A1A2A3` / `A1A2A3A4`. **The G9 retirement
+sentinel does not catch this** — it asserts marker balance and content
+presence, both of which still hold. Only the message text changes meaning.
+
+**Fix.** Emit `'\n'` in the continuation branch, gated on `has_content`.
+
+**Why gated — strictly better than the retired G9.** G9 emitted the newline
+unconditionally, which injects a stray blank line when the FIRST message of the
+pair is empty:
+
+| input | G9-style (unconditional) | G11 (gated) |
+|---|---|---|
+| `assistant ""`, `assistant "A2"` | `<\|turn>model\n\nA2` (stray line) | `<\|turn>model\nA2` (= upstream) |
+
+A trailing newline is still emitted when the SECOND message is the empty one
+(`A1\n` before the close). Avoiding that would require knowing the next
+message's rendered content before rendering it; a trailing whitespace byte
+before a turn close is benign next to gluing two messages together.
+
+**Relationship to G9.** G9 is retired (upstream fixed the imbalance). G11 is
+the narrow residue — the separator half upstream did not reproduce. This is
+why a retirement should be verified by *output* assertions, not only by the
+invariant the patch originally targeted.
+
+**Verification.** Byte-identical to upstream for every conversation without
+consecutive assistants (15 combos incl. tool-call shapes); 2/3/4-run separation
+with balanced turns; empty-leading case byte-identical to upstream; parses
+under minja on all five sizes; applies alone and in the chain
+`G1 → G11 → G4 → G8`.
+
+**Attribution.** Defect surfaced by an independent review (gpt-5.6-sol) of the
+G7/G9/G10 retirement. Fix original to this repo.
+
+---
+
+### Gemma 4 — string-form tool arguments now REJECTED upstream (2026-07-09)
+
+**Not a patch — a documented breaking change.** Recorded because the sync's
+"other upstream changes" list originally missed it.
+
+Google's 2026-07-09 template added an explicit guard: a tool call whose
+`function.arguments` is a **string** now aborts the render.
+
+```
+RuntimeError: chat_template: tool_calls[].function.arguments must be a JSON
+object (mapping), not a string. Deserialize arguments before passing to the
+template.
+```
+
+**Why it matters.** The OpenAI chat-completions spec defines `arguments` as a
+**JSON-encoded string**, so a spec-faithful OpenAI-compat client sends exactly
+the shape Gemma 4 now rejects. The pre-rewrite template accepted it. Existing
+agent histories that rendered before the sync can therefore stop rendering
+after it — a hard failure, not a degradation.
+
+**Why this repo ships no compatibility patch.** Converting a JSON string into
+Gemma's `call:NAME{key:value}` form requires *parsing* JSON in the template.
+Neither engine has a JSON-parse filter — verified: `fromjson`, `from_json` and
+`loads` are absent from **both** jinja2 and minja (only `tojson`, the inverse,
+exists). Emitting the raw JSON blob inside `{...}` would produce malformed
+output for Gemma's parser, i.e. silent corruption in place of a loud error.
+Adding a non-portable extension filter would violate the repo's no-vendor-
+lock-in scope rule (the same reasoning documented under Q3.6-4's "why two
+grammars").
+
+**Contrast with Qwen's Q3.6-4.** There, upstream **silently dropped** string
+arguments, so emitting them verbatim was strictly better than the status quo.
+Here upstream **fails loudly with an actionable message**, so there is no
+silent-corruption argument, and a lossy workaround would be a regression.
+
+**Migration.** Deserialize `arguments` before calling the template:
+
+```python
+for tc in msg.get("tool_calls", []):
+    fn = tc["function"]
+    if isinstance(fn.get("arguments"), str):
+        fn["arguments"] = json.loads(fn["arguments"])
+```
+
+**Sentinel.** `test_g5_upstream_rejects_string_tool_arguments` pins the current
+behaviour on all five sizes, so a future upstream reversal is noticed.
 
 ---
 

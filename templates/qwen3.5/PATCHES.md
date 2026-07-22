@@ -1,5 +1,9 @@
 # Qwen3.5 patched templates
 
+> **NOT TESTED HERE.** Qwen3.5 is not run on our side. This family is
+> catalog-only: `patched/` is empty, `patches/qwen3.5/` ships no `.patch`
+> files, and the entries in `docs/PATCH-CATALOG.md` are documented analysis
+> rather than validated fixes. Verify against your own runtime before use.
 > **Status: catalog entries only as of initial scaffold.** The `patched/`
 > directory for Qwen3.5 is intentionally empty in this initial release —
 > the patch catalog (P1–P10, R1–R3) is documented in

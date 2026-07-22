@@ -52,7 +52,13 @@ pytest -v
 #    (Gemma 4 ships no patched/ stack as of 2026-07-20 — its remaining
 #     patches G1/G8 are opt-in; see templates/gemma4/PATCHES.md)
 
-# 4) Refresh upstream templates from HF (e.g., after a model card update)
+# 4) Detect upstream drift (read-only; exits 1 if a tracked template moved)
+./scripts/fetch-upstream.sh --check
+
+# 5) Re-verify that community source snapshots still resolve
+./scripts/check-sources.py
+
+# 6) Refresh upstream templates from HF (e.g., after a model card update)
 ./scripts/fetch-upstream.sh qwen3.5
 ```
 
@@ -130,7 +136,7 @@ See `docs/PATCH-CATALOG.md` for the full table. High-level summary:
 
 | Family | Patches in repo | Of which already upstream | Affecting active runtimes |
 |---|---:|---:|---:|
-| Qwen3.5 | P1–P12, R1–R3 (15 total — all currently catalog-only / deferred) | P2, R1 (partial) | 8 |
+| Qwen3.5 | P1–P12, R1–R3 (15 total — **catalog-only and UNTESTED here**; no patches ship) | P2, R1 (partial) | n/a — not run on our side |
 | Qwen3.6 | Q3.6-1 … Q3.6-14 | 0 | 8 active (Q3.6-1…-6, Q3.6-12, Q3.6-14); Q3.6-7/-9/-10/-13 opt-in; Q3.6-8 watch; Q3.6-11 catalog-only |
 | Gemma 4 | G1–G11 | **G3, G7, G9, G10** | 2 opt-in only (G1, G8) — **no default patched stack** |
 

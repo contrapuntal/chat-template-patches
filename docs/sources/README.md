@@ -21,6 +21,13 @@ structured JSON, which is what we snapshot here (not the rendered HTML).
 Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
 "<thread-url>.json"`.
 
+> **Both Reddit rows return HTTP 403 to automated re-fetch as of 2026-07-22.**
+> Reddit now gates the JSON API for non-browser agents. This is *gating, not
+> deletion* — the threads are still reachable by hand — but it means these
+> snapshots are now the only machine-readable copies, which raises their value
+> rather than invalidating them. Provenance tiers are unchanged; re-verify by
+> hand if a claim is ever challenged.
+
 | File | SHA-256 | Original URL | Author / context | Fetch date |
 |---|---|---|---|---|
 | `reddit/1sqpsut-expensive_register_5-qwen36-tool-calling-tests.json` | `5ce6d606f419` | https://www.reddit.com/r/LocalLLM/comments/1sqpsut/ | u/Expensive-Register-5 — field-tested whether the Qwen3.5 tool-calling fixes (incl. `qwen3.5-enhanced.jinja` + `preserve_thinking: true`) carry over to Qwen3.6-35B-A3B. Contains contradictory community data points on `preserve_thinking` for Qwen3.6 that inform **Q3.6-1**'s field-reports section. | 2026-04-22 |
@@ -34,7 +41,6 @@ Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
 | `pastebins/W9VxRw09-no_information9314-gemma4-enable_thinking.jinja` | `71d8f3b656de` | https://pastebin.com/raw/W9VxRw09 | u/No_Information9314 — Gemma 4 ENABLE_THINKING/DISABLE_THINKING sentinel template (G4 reference) | 2026-04-22 |
 | `pastebins/hnPGq0ht-sadman782-gemma4-alt-template.jinja` | `34dd08298843` | https://pastebin.com/raw/hnPGq0ht | Sadman782 — Gemma 4 alternative template recommended in r/LocalLLaMA "PSA: Gemma 4 template improvements" (G3-adjacent) | 2026-04-22 |
 | `pastebins/HDt34yA8-gohab2001-qwen35-model.yaml` | `48aef89dad89` | https://pastebin.com/raw/HDt34yA8 | u/Gohab2001 — example LM Studio `model.yaml` exposing `enableThinking` toggle (G5 / cross-cutting reference) | 2026-04-22 |
-| `pastebins/tBAHN6FV-sigjhl-gemma4-jsonschema-robustness.jinja` | `d6f83e366f35` | https://pastebin.com/raw/tBAHN6FV | u/sigjhl — iterated Gemma 4 chat template with JSON Schema robustness fixes (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type/null). Superset of the HF PR at `google/gemma-4-31B-it/discussions/91`. Reference template for **G8** (opt-in patch); CRLF normalized to LF on import. | 2026-05-06 |
 | `pastebins/tBAHN6FV-sigjhl-gemma4-jsonschema-robustness.jinja` | `d6f83e366f35` | https://pastebin.com/raw/tBAHN6FV | u/sigjhl — iterated Gemma 4 chat template with JSON Schema robustness fixes (`anyOf`/`oneOf`/`allOf`/`$ref`/`$defs`/`enum`/`const`/array-type/null). Superset of the HF PR at `google/gemma-4-31B-it/discussions/91`. Reference template for **G8** (opt-in patch); CRLF normalized to LF on import. | 2026-05-06 |
 
 ## Gists (medium decay risk — tied to GitHub account state)
@@ -61,7 +67,7 @@ Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
 
 | File | SHA-256 | Original URL | Author / context | Fetch date |
 |---|---|---|---|---|
-| `hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen35.jinja` | `1acf46b19dbb` | https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates/raw/main/qwen3.5/chat_template.jinja | froggeric — Qwen3.5 fixes (developer role, `</think>`/`</thinking>` recognition, string-arg tojson guard, etc). Companion to the Qwen3.6 snapshots; cross-referenced from r/LocalLLaMA `1t4cev0` and used by fakezeta as one of the two parents of the merged template at `gists/fakezeta-9e8e039c-...`. | 2026-05-06 |
+| `hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen35.jinja` | `1acf46b19dbb` | ~~https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates/raw/main/qwen3.5/chat_template.jinja~~ — **404 since at least 2026-07-22.** froggeric consolidated to a single root `chat_template.jinja` at v17 and moved the per-family files to `archive/qwen3.5/chat_template-v*.jinja`. **No archived version is byte-identical to this snapshot** (checked v10–v18; v17/v18 do not exist), so these exact bytes now survive ONLY here. | froggeric — Qwen3.5 fixes (developer role, `</think>`/`</thinking>` recognition, string-arg tojson guard, etc). Companion to the Qwen3.6 snapshots; cross-referenced from r/LocalLLaMA `1t4cev0` and used by fakezeta as one of the two parents of the merged template at `gists/fakezeta-9e8e039c-...`. | 2026-05-06 |
 | `hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-e1eb965.jinja` | `ce3f4fafa573` | https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates/raw/e1eb965/qwen3.6/chat_template.jinja | froggeric — initial qwen3.6 upload (2026-05-01). **Crucially does NOT contain the `<think>`-auto-close-before-`<tool_call>` block** — proof for the attribution claim that allanchan339 (commit `13556c0`, 2026-05-02) originated that fix, not froggeric. | 2026-05-06 |
 | `hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen36-2179960.jinja` | `94e944287ffa` | https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates/raw/2179960/qwen3.6/chat_template.jinja | froggeric — qwen3.6 update on 2026-05-05 that **adds** the auto-close block, byte-equivalent to allanchan339's earlier `13556c0`. The `diff -u e1eb965 2179960` is the smoking gun for the attribution chain. | 2026-05-06 |
 | `hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-v18.jinja` | `1839b811093c` | https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates/raw/main/archive/qwen3.6/chat_template-v18.jinja | froggeric **v18** (2026-05-16). Source for the **Q3.6-8 structural false-positive detection** the eval gate requires: line ~235 reads `'"error":' / 'exception:' / 'traceback' / 'command not found' / 'invalid syntax'` from short tool responses instead of broad substring matching. Also replaces `loop.previtem` with `messages[loop.index0 - 1]` for minija/old-llama.cpp portability. | 2026-06-11 |
@@ -75,6 +81,23 @@ Re-fetch with: `curl -A "Mozilla/5.0 chat-template-patches archival"
 | Source | Status | Notes |
 |---|---|---|
 | `huggingface.co/barubary/qwen3.5-barubary-attuned-chat-template` | **401 Unauthorized** at fetch time | Source for catalog entries P6, P7, P8, P9, P10, R2. Repo may be gated, deleted, or temporarily unavailable. Mitigation: catalog entries reference individual barubary "Fix N" identifiers; the linked PR comments and commit messages on llama.cpp / Qwen3 issues quote the relevant Jinja snippets. If barubary's repo becomes accessible again, run `scripts/fetch-sources.sh` (planned) to capture it. |
+
+## Verifying (automated)
+
+    scripts/check-sources.py          # re-fetch every row, compare SHA-256
+    scripts/check-sources.py --quiet  # findings only
+
+Classifies each row as OK / MOVED (moving ref, expected) / CHANGED (a
+commit-pinned URL changed — always a finding) / GONE (404, deleted) / BLOCKED
+(401/403/429, host gates automation) / NOCHECK (the recorded URL is a human
+landing page whose raw form cannot be derived) and exits non-zero on findings.
+
+The companion check for *upstream model templates* is
+`scripts/fetch-upstream.sh --check` (read-only drift detection).
+
+Run both periodically. The 2026-07-22 sweep — the first since these snapshots
+were taken — found one dead URL and two newly-gated hosts, none of which
+anything would have surfaced on its own.
 
 ## Refreshing snapshots
 

@@ -64,6 +64,35 @@ Master table of every patch maintained in this repo. For a flat-index bibliograp
 
 ## Detailed entries
 
+### Qwen3.5 — scope caveat: NOT TESTED HERE
+
+**The Qwen3.5 entries below (P1–P12, R1–R3) are catalog-only and untested by
+this repo.** Qwen3.5 is not run on our side, so nothing in this family has been
+exercised against a live model — only read from upstream templates, community
+sources, and (where a fixture exists) the render harness.
+
+Concretely that means:
+
+- `templates/qwen3.5/patched/` is **empty**; `qwen3.5` is listed in
+  `CATALOG_ONLY_FAMILIES` (`tests/conftest.py`), and `patches/qwen3.5/` ships
+  **no `.patch` files**. The seven `upstream/*.jinja` snapshots are tracked for
+  reference and drift detection only.
+- Entries are documentation of prior art and analysis, **not** validated
+  fixes. Statuses like *active* describe the bug's state upstream, not a
+  shipped artifact here.
+- P11 and P12 are marked *deferred* for this reason: they would ship "alongside
+  the rest of the Qwen3.5 patch series", which does not exist.
+- Anyone adopting one of these should treat it as a starting point and verify
+  against their own runtime — including a minja check (see Q3.6-14; the Qwen3.6
+  family shipped a template that could not render on llama.cpp at all, and the
+  same failure class would apply to a Qwen3.5 port of Q3.6-3/Q3.6-5).
+
+Qwen3.6 and Gemma 4 are the tested families. If Qwen3.5 is ever brought into
+scope, the work is: ship patches, drop it from `CATALOG_ONLY_FAMILIES`, and add
+fixtures — in that order.
+
+---
+
 ### P1 — Agentic no-user-query crash fallback
 
 **Target:** All Qwen3.5 sizes.
@@ -376,6 +405,11 @@ applies the same fix.
 **Prior art.** froggeric's `qwen3.5/chat_template.jinja` (HF
 `Qwen-Fixed-Chat-Templates`, **snapshotted** at
 `docs/sources/hf-snapshots/froggeric-Qwen-Fixed-Chat-Templates-qwen35.jinja`).
+**The original URL 404s as of 2026-07-22** — froggeric consolidated to a single
+root template at v17 and moved per-family files under `archive/`, and no
+archived version is byte-identical to our snapshot. The prior art therefore
+survives only in this repo's snapshot; provenance tier stays
+community-tracker on the strength of that copy.
 
 ---
 
@@ -1422,6 +1456,32 @@ behaviour on all five sizes, so a future upstream reversal is noticed.
 
 ---
 
+### Gemma 4 — upstream tracker state (checked 2026-07-22)
+
+Recorded so the repo stops guessing about what is already filed. Checked via
+the HF discussions API on `google/gemma-4-{31B-it,26B-A4B-it,12B-it}`.
+
+| Thread | State | Relevance |
+|---|---|---|
+| **#118** (31B) / #47 (26B) / #35 (12B) — *"fix: chat template — null handling, reasoning preservation, turn-tag balance, input validation"* | **MERGED** | **This IS the 2026-07-09 rewrite.** Its own summary confirms every retirement: `None`→`null`, `preserve_thinking`, "consecutive assistant messages now produce balanced tags via forward-scan continuation detection" (G9), and string-arg validation. Catalog entries that described #118 as *unmerged* were stale and are corrected. |
+| **#91** (31B) — sigjhl's JSON Schema PR | **OPEN** | **G8's upstream fix is already filed.** Do not open a duplicate. If anything, comment with the pseudo-property finding (upstream's `filter_keys` fallback re-emitting schema keywords as properties), which sigjhl's PR does not appear to cover. |
+| **#114** (31B) — *"Repetition collapse when continuing an assistant turn (`continue_final_message=true`)"* | OPEN | Possibly a downstream symptom of the **G11** defect (consecutive/continued assistant turns). Not confirmed — worth checking before filing G11 upstream. |
+| **#119** (31B) / #48 (26B) / #38 (12B) — *"Chat template may re-inject prior-turn reasoning during multi-turn tool use → repetition loops"* | OPEN | A live upstream argument that **preserving** prior reasoning causes repetition loops — the inverse of the G10 / Q3.6-1 design stance. Relevant to both families; see the Q3.6-1 field reports, which are already mixed. |
+| #109 (31B) — OpenAI-compatible multimodal content-part aliases | OPEN | Overlaps the alias handling already present in the 2026-07-09 template. |
+
+**Discrepancy worth knowing.** PR #118's description says `preserve_thinking`
+defaults to **true**. The shipped template sets
+`preserve_thinking | default(false)`, and measurement confirms default-OFF
+(historical tool-call reasoning is dropped without the kwarg). Trust the
+rendered bytes, not the PR prose.
+
+**Filing guidance.** G8 → already filed (#91). String-arg rejection → working
+as intended per #118, do not file. G11 → no existing thread found; check #114
+first. G1 → a minja/llama.cpp concern, belongs in llama.cpp rather than the
+model repo.
+
+---
+
 ### G1 — Gemma 4 `is sequence` minijinja crash
 
 **Target:** Gemma 4 26B-A4B-it, 31B-it. **LM Studio MCP path only.**
@@ -1876,7 +1936,7 @@ non-consecutive cases).
 - *Provenance tier:* upstream-tracker (the bug sits in a durable Google HF
   discussion with a publisher-side reproduction).
 - *Upstream status:* OPEN; this patch predates any upstream resolution. A
-  later Google PR — HF disc **#118** ("fix: chat template — null handling,
+  later Google PR — HF disc **#118** (MERGED 2026-07-09; "fix: chat template — null handling,
   reasoning preservation, **turn-tag balance**, input validation") —
   independently proposes a turn-tag-balance fix, corroborating G9 and
   suggesting it may land upstream. Still **unmerged** as of 2026-06-11
@@ -1903,7 +1963,8 @@ arguments last time and, after 2-3 turns, later tool calls collapse to
 `arguments: {}` even though the prior reasoning had identified the parameters.
 This is the Gemma analog of **Q3.6-1** (Qwen3.6) and of the Qwen failure in
 `earendil-works/pi#3325`; reported for Gemma 4 in r/LocalLLaMA 12B tool-calling
-threads and in Google's (unmerged) PR HF disc #118 ("reasoning preservation").
+threads and in Google's PR HF disc #118 ("reasoning preservation") — **merged
+2026-07-09**.
 
 **Fix.** Add a `preserve_thinking` kwarg; when set, relax the
 current-region-only guard so historical tool-call reasoning renders too:
@@ -1914,7 +1975,7 @@ current-region-only guard so historical tool-call reasoning renders too:
 **Default OFF — deliberate, and why this differs from Q3.6-1.** Q3.6-1 flips
 Qwen3.6's `preserve_thinking` default *on* because Qwen's model card recommends
 it. For Gemma the situation is the opposite: Google's reasoning-preservation
-change is an **unmerged** PR (#118) and the community stance was contested, so a
+change was at the time an unmerged PR (#118 — **since merged, 2026-07-09**) and the community stance was contested, so a
 *derived* patch must not presume Google's intent. G10 therefore ships in
 `patched/` but is **byte-identical to upstream unless `preserve_thinking=true`
 is passed** (verified for both no-kwarg and `preserve_thinking=false`). It's an
@@ -1944,7 +2005,7 @@ state.
 **Attribution.**
 - *Reporter:* community (r/LocalLLaMA Gemma 4 12B tool-calling threads); same
   failure family as `earendil-works/pi#3325`.
-- *Upstream analog:* Google PR **HF disc #118** ("reasoning preservation"),
+- *Upstream analog:* Google PR **HF disc #118** ("reasoning preservation") — **MERGED 2026-07-09**; this is the rewrite that retired G7/G9/G10,
   unmerged as of 2026-06-11 — so G10 is **derived**, not a port of a finished
   template.
 - *Fix author:* original to this repo — minimal kwarg gate on the template's

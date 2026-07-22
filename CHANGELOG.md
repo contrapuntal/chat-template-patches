@@ -54,6 +54,38 @@ documented in `docs/PATCH-CATALOG.md`.
   surface from 3 to 4 `is sequence` sites. Byte-identical under jinja2 for
   normal inputs, and additionally fixes a latent dict-valued-`content` crash
   (jinja2's `sequence` test is true for mappings).
+- **Upstream drift detection (`scripts/fetch-upstream.sh --check`).** Read-only
+  mode that fetches every tracked template and reports SHA drift without
+  writing, exiting 1 on drift or unreachable source. Also adds the previously
+  untracked `gemma4/12B-it` and a froggeric tracker that reports its
+  `template_version`. Google's 2026-07-09 Gemma rewrite went unnoticed for 11
+  days, while the shipped Qwen3.6 template was separately unrenderable on
+  llama.cpp — both surfaced only because someone asked. Now the repo says so.
+- **Source snapshot verification (`scripts/check-sources.py`).** Re-fetches
+  every row in `docs/sources/README.md` and classifies OK / MOVED / CHANGED
+  (pinned URL changed — always a finding) / GONE (404) / BLOCKED (403, host
+  gates automation) / NOCHECK. Implements the re-fetch policy that
+  `docs/sources/README.md` already prescribed but nothing enforced.
+  First sweep since the snapshots were taken found:
+  - **froggeric's `qwen3.5/chat_template.jinja` is 404** — consolidated to a
+    single root template at v17, per-family files moved under `archive/`. No
+    archived version is byte-identical to our snapshot (checked v10–v18), so
+    those exact bytes now survive only here. P12's provenance updated.
+  - **Both Reddit snapshots return 403** — gating, not deletion. Tiers
+    unchanged; noted that our copies are now the only machine-readable ones.
+  - One duplicated manifest row removed.
+- **Upstream tracker state recorded (checked 2026-07-22).** HF disc **#118 is
+  MERGED** and *is* the 2026-07-09 rewrite — several catalog entries described
+  it as unmerged and were stale. G8's fix is **already filed upstream as #91
+  (open)**, so no duplicate should be opened. #114 (repetition collapse on
+  `continue_final_message`) may be a downstream symptom of the G11 defect, and
+  #119 argues that *preserving* reasoning causes repetition loops — the inverse
+  of the G10 / Q3.6-1 stance. Also noted: #118's description claims
+  `preserve_thinking` defaults true while the shipped template defaults false.
+- **Qwen3.5 marked NOT TESTED.** The family is catalog-only and is not run on
+  our side: no patches ship, `patched/` is empty, and its entries are
+  documented analysis rather than validated fixes. Stated in the catalog,
+  README, and the family's PATCHES/PROVENANCE.
 - **Gemma 4 G8 revised** — fixed two defects found in review. (1) Upstream's
   object fallback recurses with `filter_keys=true` over a `standard_keys` list
   naming none of the schema vocabulary, so stock renders

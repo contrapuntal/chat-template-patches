@@ -1,5 +1,7 @@
 # Qwen3.5 chat template provenance
 
+> **NOT TESTED HERE.** These upstream snapshots are tracked for reference and
+> drift detection only; Qwen3.5 is not run on our side and no patches ship.
 All files fetched 2026-04-22 from the canonical Hugging Face model repos
 (curl from `https://huggingface.co/Qwen/Qwen3.5-<size>/raw/main/chat_template.jinja`).
 

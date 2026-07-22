@@ -1304,6 +1304,61 @@ obsolete trailing-newline fix).
 
 ---
 
+### jinja2 / minja `tojson` divergence (runtime caveat, not a patch)
+
+**Applies to:** any Qwen3.6 deployment on llama.cpp / LM Studio's GGUF path,
+**including the stock upstream template**. Not introduced by any patch here and
+not portably fixable from inside a template.
+
+`| tojson` behaves differently in the two engines. Measured on llama.cpp b9290
+(`llama-template-analysis`) vs jinja2:
+
+| input | jinja2 | minja |
+|---|---|---|
+| `{'zz':1,'aa':2}` | `{"aa": 2, "zz": 1}` (keys **sorted**) | `{"zz": 1, "aa": 2}` (insertion order) |
+| `{'k':'a<b>c'}` | `{"k": "a\u003cb\u003ec"}` (**escaped**) | `{"k": "a<b>c"}` (**literal**) |
+| `{'k':'a&b'}` | `{"k": "a\u0026b"}` | `{"k": "a&b"}` |
+| `{'k':'café'}` | `{"k": "caf\u00e9"}` | `{"k": "café"}` |
+
+**The escaping difference is security-relevant.** Qwen3.6 upstream renders each
+tool declaration with `{{- tool | tojson }}` (upstream line 63) inside a
+`<tools>` … `</tools>` envelope. Under jinja2 a tool **name or description**
+containing `</tools>` is escaped to `\u003c/tools\u003e` and stays contained.
+Under minja it is emitted literally and **terminates the envelope**, so
+attacker-controlled tool metadata can inject arbitrary prompt structure after
+it — e.g. a hostile or compromised MCP server advertising a tool whose
+description ends the tools block and continues with its own instructions.
+
+**Why no patch ships.** The escaping happens inside the engine's `tojson`
+implementation; a template cannot force minja to escape, and hand-rolling a
+JSON serializer in Jinja to do it would (a) diverge from upstream's declaration
+format and (b) require exactly the character-level primitives minja is thin on.
+The honest mitigation is at the runtime/harness layer.
+
+**Mitigation for llama.cpp users.** Treat tool metadata as trusted input, or
+sanitize tool names/descriptions (strip or escape `<`, `>`, `&`) before handing
+them to the template. This is the same class of caveat as "don't put untrusted
+text in a system prompt".
+
+**Upstream reporting.** The divergence is arguably a minja bug — jinja2's
+`tojson` escapes `<>&` deliberately, and a drop-in engine diverging on it is
+surprising. That belongs in `ggml-org/llama.cpp`, not the model repo.
+
+**Guard.** `tests/test_render.py::test_jinja2_minja_construct_agreement` renders
+a probe of every construct our templates use through **both** engines and
+asserts agreement; the four known divergences are pinned in
+`KNOWN_DIVERGENCES` with their exact outputs, so the suite fails if minja's
+behaviour changes in either direction.
+`test_tojson_escaping_divergence_is_an_injection_vector` pins the concrete
+`</tools>` consequence rather than just the byte difference.
+
+**How it was found.** A gpt-5.6-sol review of the Qwen side. The existing minja
+gate could not see it: it asserts templates *parse* under minja, not that they
+render the *same bytes* — a construct can be valid in both engines and still
+behave differently. The differential suite closes that second gap.
+
+---
+
 ### Q3.6-14 — Qwen3.6 position-free rewrite (minja portability)
 
 **Target:** Qwen3.6-35B-A3B. **Status: active** — shipped in the default stack,

@@ -25,6 +25,7 @@ locally if they want. `tests/golden/` is intentionally empty in this repo.
 
 from __future__ import annotations
 
+import re
 import shutil
 
 import pytest
@@ -2087,4 +2088,146 @@ def test_no_position_returning_string_methods(label: str, src: str) -> None:
     assert not hits, (
         f"{label} uses position-returning string method(s) {hits} — minja has "
         f"none of them and aborts the render. See PATCH-CATALOG § Q3.6-14."
+    )
+
+
+# ---------------------------------------------------------------------------
+# jinja2 <-> minja CONSTRUCT DIFFERENTIAL
+# ---------------------------------------------------------------------------
+
+# The minja gate above proves our templates *parse* under llama.cpp's engine.
+# It does NOT prove they render the SAME bytes — a construct can be valid in
+# both engines and still behave differently. That gap is real: `| tojson`
+# diverges in three ways, one of them security-relevant (see below).
+#
+# This suite renders a minimal probe of every construct the shipped templates
+# rely on through BOTH engines and asserts agreement. Constructs that are known
+# to diverge are pinned in KNOWN_DIVERGENCES with their exact current outputs,
+# so the suite fails if minja's behaviour changes in EITHER direction — a new
+# divergence, or an existing one being fixed (at which point delete the entry).
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\([A-Za-z]")
+
+# construct -> (jinja2_output, minja_output) as measured on llama.cpp b9290
+KNOWN_DIVERGENCES = {
+    # jinja2 sorts object keys; minja preserves insertion order.
+    "tojson_key_order": ('{"aa": 2, "zz": 1}', '{"zz": 1, "aa": 2}'),
+    # SECURITY-RELEVANT: jinja2 escapes < > & (HTML-safety heritage); minja does
+    # not. A tool name/description containing "</tools>" is therefore contained
+    # under jinja2 but TERMINATES the <tools> envelope under minja, letting
+    # attacker-controlled tool metadata inject prompt structure. The affected
+    # `{{- tool | tojson }}` is UPSTREAM Qwen3.6 (line 63), not one of our
+    # patches, and cannot be fixed portably from inside the template.
+    # See docs/PATCH-CATALOG.md § "jinja2 / minja tojson divergence".
+    "tojson_angle": ('{"k": "a\\u003cb\\u003ec"}', '{"k": "a<b>c"}'),
+    "tojson_amp": ('{"k": "a\\u0026b"}', '{"k": "a&b"}'),
+    # jinja2 escapes non-ASCII; minja emits it raw. Both valid JSON.
+    "tojson_nonascii": ('{"k": "caf\\u00e9"}', '{"k": "caf\u00e9"}'),
+    # jinja2's `sequence` test is true for mappings; minja's is not. This is why
+    # G1's dict-content crash fix is a JINJA2-scoped concern (see § G1).
+    "is_sequence_dict": ("Y", "N"),
+}
+
+CONSTRUCT_PROBES = {
+    "tojson_key_order": "{%- set d={'zz':1,'aa':2} -%}{{- d|tojson -}}",
+    "tojson_angle": "{{- {'k':'a<b>c'}|tojson -}}",
+    "tojson_amp": "{{- {'k':'a&b'}|tojson -}}",
+    "tojson_nonascii": "{{- {'k':'caf\u00e9'}|tojson -}}",
+    "tojson_list": "{{- [1,'a',true]|tojson -}}",
+    "split_join": "{%- set s='a<T>b' -%}{{- s.split('<T>')|join('|') -}}",
+    "last_length": "{%- set s='a<T>b<T>c' -%}{{- s.split('<T>')|last|length -}}",
+    "slice_head": "{%- set s='a<T>b<T>c' -%}{{- s.split('<T>')[:-1]|join('/') -}}",
+    "slice_tail": "{%- set s='a<T>b<T>c' -%}{{- s.split('<T>')[1:]|join('/') -}}",
+    "rstrip_arg": "{{- 'xaa'.rstrip('a') -}}",
+    "lstrip_arg": "{{- 'aax'.lstrip('a') -}}",
+    "startswith": "{{- 'abc'.startswith('ab') -}}",
+    "endswith": "{{- 'abc'.endswith('bc') -}}",
+    "reverse_slice": "{%- set l=[1,2,3] -%}{{- l[::-1]|join(',') -}}",
+    "dictsort": "{%- set d={'b':1,'a':2} -%}{%- for k,v in d|dictsort -%}{{k}}{%- endfor -%}",
+    "is_mapping": "{%- set d={'a':1} -%}{{- 'Y' if d is mapping else 'N' -}}",
+    "is_iterable_str": "{{- 'Y' if 'ab' is iterable else 'N' -}}",
+    "is_string": "{{- 'Y' if 'ab' is string else 'N' -}}",
+    "is_sequence_dict": "{%- set d={'a':1} -%}{{- 'Y' if d is sequence else 'N' -}}",
+    "tilde_concat": "{{- 'a' ~ 1 ~ 'b' -}}",
+    "namespace_loop": "{%- set n=namespace(v=0) -%}{%- for i in [1,2] -%}{%- set n.v=n.v+i -%}{%- endfor -%}{{- n.v -}}",
+    "trim": "{{- '  x  '|trim -}}",
+    "default_filter": "{{- undef|default('D') -}}",
+    "in_operator": "{{- 'Y' if 'b' in 'abc' else 'N' -}}",
+    "bool_render": "{{- (1==1) -}}",
+}
+
+
+def _minja_render(source: str) -> str:
+    """Render `source` under llama.cpp's minja and return its output.
+
+    `llama-template-analysis` reports the rendered text as the "Common Prefix"
+    of its probe diffs; for a message-independent template that is the whole
+    output.
+    """
+    import subprocess
+    import tempfile
+    from pathlib import Path as _P
+
+    with tempfile.TemporaryDirectory() as d:
+        f = _P(d) / "probe.jinja"
+        f.write_text(source)
+        r = subprocess.run([MINJA_BIN, "--template-file", str(f)],
+                           capture_output=True, text=True)
+    out = _ANSI.sub("", r.stdout + r.stderr)
+    if "Analysis failed" in out:
+        return "<minja FAILED>"
+    m = re.search(r"Common Prefix: '(.*?)'\s*\nCommon Suffix", out, re.S)
+    return m.group(1) if m else "<unparsed>"
+
+
+@pytest.mark.parametrize("name", sorted(CONSTRUCT_PROBES))
+def test_jinja2_minja_construct_agreement(name: str) -> None:
+    """Every Jinja construct our templates use must render identically under
+    jinja2 and minja — or be pinned in KNOWN_DIVERGENCES with both outputs."""
+    if MINJA_BIN is None:
+        pytest.skip("llama-template-analysis not on PATH")
+    from conftest import make_env
+
+    source = CONSTRUCT_PROBES[name]
+    j2 = make_env().from_string(source).render()
+    mj = _minja_render(source)
+    assert mj not in ("<unparsed>", "<minja FAILED>"), (
+        f"could not obtain minja output for {name!r} — probe or extraction is "
+        f"broken, not the engine. Got {mj!r}."
+    )
+    if name in KNOWN_DIVERGENCES:
+        want_j2, want_mj = KNOWN_DIVERGENCES[name]
+        assert (j2, mj) == (want_j2, want_mj), (
+            f"KNOWN divergence {name!r} changed.\n"
+            f"  expected jinja2={want_j2!r} minja={want_mj!r}\n"
+            f"  actual   jinja2={j2!r} minja={mj!r}\n"
+            f"If minja now AGREES with jinja2, delete the KNOWN_DIVERGENCES "
+            f"entry and update docs/PATCH-CATALOG.md."
+        )
+    else:
+        assert j2 == mj, (
+            f"NEW jinja2/minja divergence in {name!r}:\n"
+            f"  jinja2={j2!r}\n  minja ={mj!r}\n"
+            f"Either avoid this construct in shipped templates, or pin it in "
+            f"KNOWN_DIVERGENCES with a documented rationale."
+        )
+
+
+def test_tojson_escaping_divergence_is_an_injection_vector() -> None:
+    """Pin the concrete consequence, not just the byte difference: a tool
+    description containing `</tools>` is contained under jinja2 but breaks the
+    `<tools>` envelope under minja. Upstream Qwen3.6 renders tool declarations
+    with `{{- tool | tojson }}`, so this affects stock templates too — it is a
+    RUNTIME caveat for llama.cpp users, not a defect introduced by our patches."""
+    if MINJA_BIN is None:
+        pytest.skip("llama-template-analysis not on PATH")
+    from conftest import make_env
+
+    probe = "{{- {'description':'x</tools>y'}|tojson -}}"
+    j2 = make_env().from_string(probe).render()
+    mj = _minja_render(probe)
+    assert "</tools>" not in j2, f"jinja2 unexpectedly left the marker raw: {j2!r}"
+    assert "</tools>" in mj, (
+        f"minja now escapes the marker ({mj!r}) — the injection vector is gone; "
+        f"update docs/PATCH-CATALOG.md and KNOWN_DIVERGENCES."
     )

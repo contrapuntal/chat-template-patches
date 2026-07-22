@@ -54,6 +54,22 @@ documented in `docs/PATCH-CATALOG.md`.
   surface from 3 to 4 `is sequence` sites. Byte-identical under jinja2 for
   normal inputs, and additionally fixes a latent dict-valued-`content` crash
   (jinja2's `sequence` test is true for mappings).
+- **jinja2/minja construct differential added to the suite**, closing the
+  second half of the engine-divergence gap: the minja gate proved templates
+  *parse*, this proves they render the *same bytes*. 22 constructs probed
+  through both engines; four known divergences pinned with exact outputs so a
+  change in either direction fails the suite.
+- **Documented a security-relevant `tojson` divergence (runtime caveat, no
+  patch).** jinja2 escapes `<`/`>`/`&` in `tojson`; minja does not. Qwen3.6
+  upstream renders tool declarations with `{{- tool | tojson }}` inside a
+  `<tools>` envelope, so on llama.cpp a tool description containing `</tools>`
+  **terminates the envelope** and can inject prompt structure — relevant to
+  anyone loading tools from untrusted/third-party MCP servers. Present in the
+  stock upstream template, not introduced here, and not portably fixable from
+  inside a template; mitigation belongs in the harness. Found by a gpt-5.6-sol
+  review of the Qwen side.
+- **G1's rationale narrowed again** — its mapping crash fix is jinja2-specific;
+  minja's `sequence` test already excludes mappings.
 - **Upstream drift detection (`scripts/fetch-upstream.sh --check`).** Read-only
   mode that fetches every tracked template and reports SHA drift without
   writing, exiting 1 on drift or unreachable source. Also adds the previously

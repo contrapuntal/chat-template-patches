@@ -6,6 +6,15 @@ documented in `docs/PATCH-CATALOG.md`.
 
 ## [Unreleased]
 
+### Deprecated
+
+- **Repository frozen on 2026-08-30.** With the release of Qwen3.8, active
+  maintenance has ended. No new patches, model families, or support will be
+  provided, and the repository is retained as a historical archive of its
+  Qwen3.5, Qwen3.6, and Gemma 4 work. Existing artifacts remain available for
+  their documented model versions but have not been evaluated for Qwen3.8 or
+  other newer models.
+
 ### Added
 
 - Initial scaffold with patch catalog, render harness, and tooling.

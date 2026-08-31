@@ -1,5 +1,13 @@
 # chat-template-patches
 
+> [!IMPORTANT]
+> **Archived and unmaintained as of 2026-08-30.** With the release of
+> Qwen3.8, this repository is frozen as a historical archive of its Qwen3.5,
+> Qwen3.6, and Gemma 4 work. No new patches, model families, support, or
+> routine maintenance will be provided. The preserved patches remain useful
+> for their documented model versions, but they have not been evaluated for
+> Qwen3.8 or other newer models and should not be assumed compatible with them.
+
 Curated, tested patches for Hugging Face Jinja chat templates, focused on
 fixing real-world bugs in **Qwen3.5**, **Qwen3.6**, and **Gemma 4** that block
 agentic workflows (tool calling, multi-turn reasoning, KV-cache reuse).
@@ -37,7 +45,10 @@ correctness *and* that the patch actually addresses the failure mode.
   directory), `verify.py` (render-and-diff against goldens),
   `fetch-upstream.sh` (refresh `upstream/` from canonical sources).
 
-## Quick start
+## Historical use
+
+These commands are retained for reproducing and using the archived patches
+with the model families and versions documented in this repository.
 
 ```bash
 # 1) Install test dependencies (jinja2 only — no transformers required)
@@ -64,8 +75,8 @@ pytest -v
 
 ## Why patches and not full-template forks
 
-Templates evolve. Pinning a fork detaches us from upstream improvements;
-maintaining a patch series lets us:
+Templates evolve. During active development, keeping a patch series instead
+of pinning a full-template fork allowed the project to:
 
 1. Re-apply on top of the next official template revision.
 2. Ship only the deltas (which usually compile to <50 lines of Jinja per patch).
@@ -108,10 +119,11 @@ scripts/verify.py                   # report any drift vs the captured baseline
 Goldens are not shipped in this repo — bootstrap them locally if you want
 this kind of regression coverage. The pytest suite does not require them.
 
-Adding a new patch means: write a fixture that exposes the bug (declare
-which families it `_applies_to` in the JSON), capture the "upstream is
-wrong" assertion, write the patch, then re-render to capture the "patched
-is right" assertion.
+During active development, a new patch required a fixture that exposed the
+bug (declaring which families it `_applies_to` in the JSON), an "upstream is
+wrong" assertion, the patch itself, and a re-rendered "patched is right"
+assertion. This process is documented for reproducibility, not as an invitation
+for new contributions.
 
 ## Scope
 
@@ -130,27 +142,22 @@ This repo is opinionated about three things:
    such in the catalog and live under a clearly labeled subset, not in the
    default `patched/` set.
 
-## Status snapshot
+## Final status snapshot (2026-08-30)
 
 See `docs/PATCH-CATALOG.md` for the full table. High-level summary:
 
-| Family | Patches in repo | Of which already upstream | Affecting active runtimes |
+| Family | Patches in repo | Of which already upstream | Status at freeze |
 |---|---:|---:|---:|
 | Qwen3.5 | P1–P12, R1–R3 (15 total — **catalog-only and UNTESTED here**; no patches ship) | P2, R1 (partial) | n/a — not run on our side |
 | Qwen3.6 | Q3.6-1 … Q3.6-14 | 0 | 8 active (Q3.6-1…-6, Q3.6-12, Q3.6-14); Q3.6-7/-9/-10/-13 opt-in; Q3.6-8 watch; Q3.6-11 catalog-only |
 | Gemma 4 | G1–G11 | **G3, G7, G9, G10** | 2 opt-in only (G1, G8) — **no default patched stack** |
 
-## Contributing
+## Project status and contributions
 
-Each new patch needs:
-
-1. A reproducible failure mode — link to an upstream issue, a client report,
-   or a falsifying fixture.
-2. A unified diff against the current upstream template in `templates/<family>/upstream/`.
-3. A test in `tests/test_render.py` that verifies both the bug and the fix.
-4. An entry in `docs/PATCH-CATALOG.md` with attribution to the original
-   discoverer if the patch isn't original to this repo.
-5. A `NOTICE` update if a new contributor or upstream source is involved.
+This project is frozen. It does not accept new patches, model families, issue
+triage, or routine maintenance. Existing artifacts are available as-is for
+historical use and reproducibility; fork the repository if you need to adapt
+them for another model or runtime.
 
 ## Provenance and attribution
 
